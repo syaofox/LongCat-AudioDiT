@@ -105,29 +105,54 @@ def generate_tts(
     full_hop = model.config.latent_hop
     max_duration = model.config.max_wav_duration
 
-    normalized_text = normalize_text(text)
-    inputs = tokenizer([normalized_text], padding="longest", return_tensors="pt")
+    # Split text by newlines (keep empty lines for silence insertion)
+    lines = text.split("\n")
+    
+    wav_segments = []
+    segment_count = 0
+    silence_duration = 0.5  # 500ms silence for empty lines
 
-    dur_sec = approx_duration_from_text(text, max_duration=max_duration)
-    duration = int(dur_sec * sr // full_hop)
-    duration = min(duration, int(max_duration * sr // full_hop))
+    for line in lines:
+        line = line.strip()
+        if not line:
+            # Insert 500ms silence for empty lines
+            silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
+            wav_segments.append(silence_wav)
+        else:
+            normalized_text = normalize_text(line)
+            inputs = tokenizer([normalized_text], padding="longest", return_tensors="pt")
 
-    with torch.no_grad():
-        output = model(
-            input_ids=inputs.input_ids.to(device),
-            attention_mask=inputs.attention_mask.to(device),
-            prompt_audio=None,
-            duration=duration,
-            steps=nfe_steps,
-            cfg_strength=guidance_strength,
-            guidance_method=guidance_method,
-        )
+            dur_sec = approx_duration_from_text(line, max_duration=max_duration)
+            duration = int(dur_sec * sr // full_hop)
+            duration = min(duration, int(max_duration * sr // full_hop))
 
-    wav = output.waveform.squeeze().detach().cpu().numpy()
-    duration_sec = len(wav) / sr
-    info = f"Generated: {duration_sec:.2f}s | Model: {model_choice} | Steps: {nfe_steps}"
+            with torch.no_grad():
+                output = model(
+                    input_ids=inputs.input_ids.to(device),
+                    attention_mask=inputs.attention_mask.to(device),
+                    prompt_audio=None,
+                    duration=duration,
+                    steps=nfe_steps,
+                    cfg_strength=guidance_strength,
+                    guidance_method=guidance_method,
+                )
 
-    return (sr, wav), info
+            wav = output.waveform.squeeze().detach().cpu().numpy()
+            wav_segments.append(wav)
+            segment_count += 1
+
+    if not wav_segments:
+        raise gr.Error("No valid text to synthesize.")
+
+    # Concatenate all segments
+    final_wav = np.concatenate(wav_segments)
+    total_duration = len(final_wav) / sr
+    info = (
+        f"Generated: {total_duration:.2f}s | Segments: {segment_count} | "
+        f"Model: {model_choice} | Steps: {nfe_steps}"
+    )
+
+    return (sr, final_wav), info
 
 
 def generate_clone(
@@ -163,11 +188,7 @@ def generate_clone(
     full_hop = model.config.latent_hop
     max_duration = model.config.max_wav_duration
 
-    norm_prompt_text = normalize_text(prompt_text)
-    norm_target_text = normalize_text(target_text)
-    full_text = f"{norm_prompt_text} {norm_target_text}"
-    inputs = tokenizer([full_text], padding="longest", return_tensors="pt")
-
+    # Process prompt audio once
     prompt_wav = load_audio(prompt_audio, sr).unsqueeze(0)
 
     off = 3
@@ -182,29 +203,63 @@ def generate_clone(
     prompt_dur = plt.shape[-1]
 
     prompt_time = prompt_dur * full_hop / sr
-    dur_sec = approx_duration_from_text(target_text, max_duration=max_duration - prompt_time)
-    approx_pd = approx_duration_from_text(prompt_text, max_duration=max_duration)
-    ratio = np.clip(prompt_time / approx_pd, 1.0, 1.5)
-    dur_sec = dur_sec * ratio
-    duration = int(dur_sec * sr // full_hop)
-    duration = min(duration + prompt_dur, int(max_duration * sr // full_hop))
 
-    with torch.no_grad():
-        output = model(
-            input_ids=inputs.input_ids.to(device),
-            attention_mask=inputs.attention_mask.to(device),
-            prompt_audio=prompt_wav.to(device),
-            duration=duration,
-            steps=nfe_steps,
-            cfg_strength=guidance_strength,
-            guidance_method=guidance_method,
-        )
+    # Split target text by newlines (keep empty lines for silence insertion)
+    lines = target_text.split("\n")
+    
+    wav_segments = []
+    segment_count = 0
+    silence_duration = 0.5  # 500ms silence for empty lines
 
-    wav = output.waveform.squeeze().detach().cpu().numpy()
-    duration_sec = len(wav) / sr
-    info = f"Generated: {duration_sec:.2f}s | Model: {model_choice} | Steps: {nfe_steps}"
+    # Move prompt_wav to device once for reuse
+    prompt_wav_device = prompt_wav.to(device)
+    norm_prompt_text = normalize_text(prompt_text)
 
-    return (sr, wav), info
+    for line in lines:
+        line = line.strip()
+        if not line:
+            # Insert 500ms silence for empty lines
+            silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
+            wav_segments.append(silence_wav)
+        else:
+            norm_target_text = normalize_text(line)
+            full_text = f"{norm_prompt_text} {norm_target_text}"
+            inputs = tokenizer([full_text], padding="longest", return_tensors="pt")
+
+            dur_sec = approx_duration_from_text(line, max_duration=max_duration - prompt_time)
+            approx_pd = approx_duration_from_text(prompt_text, max_duration=max_duration)
+            ratio = np.clip(prompt_time / approx_pd, 1.0, 1.5)
+            dur_sec = dur_sec * ratio
+            duration = int(dur_sec * sr // full_hop)
+            duration = min(duration + prompt_dur, int(max_duration * sr // full_hop))
+
+            with torch.no_grad():
+                output = model(
+                    input_ids=inputs.input_ids.to(device),
+                    attention_mask=inputs.attention_mask.to(device),
+                    prompt_audio=prompt_wav_device,
+                    duration=duration,
+                    steps=nfe_steps,
+                    cfg_strength=guidance_strength,
+                    guidance_method=guidance_method,
+                )
+
+            wav = output.waveform.squeeze().detach().cpu().numpy()
+            wav_segments.append(wav)
+            segment_count += 1
+
+    if not wav_segments:
+        raise gr.Error("No valid target text to synthesize.")
+
+    # Concatenate all segments
+    final_wav = np.concatenate(wav_segments)
+    total_duration = len(final_wav) / sr
+    info = (
+        f"Generated: {total_duration:.2f}s | Segments: {segment_count} | "
+        f"Model: {model_choice} | Steps: {nfe_steps}"
+    )
+
+    return (sr, final_wav), info
 
 
 def build_ui() -> gr.Blocks:

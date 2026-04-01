@@ -1,6 +1,7 @@
 services:
   webui:
     build: .
+    image: audiodit-webui:latest
     container_name: audiodit-webui
     runtime: nvidia
     environment:
