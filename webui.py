@@ -473,7 +473,12 @@ def build_ui() -> gr.Blocks:
 
             with gr.Tab("Voice Cloning"):
                 with gr.Row():
-                    with gr.Column(scale=2):
+                    with gr.Column(scale=1):
+                        clone_target_text = gr.Textbox(
+                            label="Target Text",
+                            placeholder="Text to synthesize in the cloned voice...",
+                            lines=6,
+                        )
                         with gr.Accordion("Load Saved Reference", open=True):
                             with gr.Row():
                                 package_dropdown = gr.Dropdown(
@@ -483,7 +488,14 @@ def build_ui() -> gr.Blocks:
                                 )
                                 refresh_btn = gr.Button("Refresh", scale=1, variant="secondary")
                             load_btn = gr.Button("Load Selected Package", variant="secondary")
-                            load_info = gr.Textbox(label="Load Status", interactive=False)
+                        with gr.Accordion("Save Reference", open=False):
+                            package_name = gr.Textbox(
+                                label="Package Name",
+                                placeholder="Optional name for the reference package...",
+                            )
+                            save_btn = gr.Button("Save Reference Package", variant="secondary")
+                            save_info = gr.Textbox(label="Save Status", interactive=False)
+                    with gr.Column(scale=1):
                         clone_audio = gr.Audio(
                             label="Reference Audio",
                             type="filepath",
@@ -492,11 +504,6 @@ def build_ui() -> gr.Blocks:
                             label="Reference Audio Text",
                             placeholder="Text content of the reference audio...",
                             lines=2,
-                        )
-                        clone_target_text = gr.Textbox(
-                            label="Target Text",
-                            placeholder="Text to synthesize in the cloned voice...",
-                            lines=3,
                         )
                         with gr.Accordion("Advanced Settings", open=False):
                             clone_nfe = gr.Slider(
@@ -515,14 +522,7 @@ def build_ui() -> gr.Blocks:
                                 )
                             clone_seed = gr.Number(value=1024, label="Seed", precision=0)
                         clone_btn = gr.Button("Clone Voice", variant="primary")
-                        with gr.Accordion("Save Reference", open=False):
-                            package_name = gr.Textbox(
-                                label="Package Name",
-                                placeholder="Optional name for the reference package...",
-                            )
-                            save_btn = gr.Button("Save Reference Package", variant="secondary")
-                            save_info = gr.Textbox(label="Save Status", interactive=False)
-                    with gr.Column(scale=2):
+                    with gr.Column(scale=1):
                         clone_output = gr.Audio(label="Output Audio", type="numpy")
                         clone_info = gr.Textbox(label="Info", interactive=False)
 
