@@ -1,9 +1,14 @@
 services:
   webui:
-    build: .
+    build:
+      context: .
+      args:
+        UID: 1000
+        GID: 1000
     image: audiodit-webui:latest
     container_name: audiodit-webui
     runtime: nvidia
+    user: "1000:1000"
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - GRADIO_SERVER_NAME=0.0.0.0
@@ -12,6 +17,7 @@ services:
       - ./models:/models
       - ./outputs:/app/outputs
       - ./assets:/app/assets
+      - ./samples:/app/samples
       # webui开发时挂载
       - ./webui.py:/app/webui.py
     ports:
