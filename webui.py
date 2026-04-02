@@ -306,6 +306,7 @@ def save_reference_package(
 
         # Create zip file
         zip_path = os.path.join(samples_dir, f"{package_name}.zip")
+        file_exists = os.path.isfile(zip_path)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(temp_dir):
                 for file in files:
@@ -316,7 +317,8 @@ def save_reference_package(
         # Clean up temp directory
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        return f"Saved to: {zip_path}"
+        action = "Updated" if file_exists else "Saved"
+        return f"{action}: {zip_path}"
 
     except Exception as e:
         # Clean up temp directory on error
