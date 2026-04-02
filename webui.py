@@ -52,22 +52,22 @@ class ModelManager:
 
         model_dir = MODEL_DIRS.get(model_key)
         if model_dir is None or not os.path.isdir(model_dir):
-            raise gr.Error(f"Model {model_key} not found at {model_dir}. Please download it first.")
+            raise gr.Error(f"模型 {model_key} 未找到，请先下载。")
 
-        print(f"Loading model {model_key} from {model_dir}...")
+        print(f"正在加载模型 {model_key}，路径: {model_dir}...")
         self.model = AudioDiTModel.from_pretrained(model_dir).to(self.device)
         self.model.vae.to_half()
         self.model.eval()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model.config.text_encoder_model)
         self.current_model_key = model_key
-        print(f"Model {model_key} loaded.")
+        print(f"模型 {model_key} 加载完成。")
 
         return self.model, self.tokenizer
 
     def get_status(self) -> str:
         if self.current_model_key:
-            return f"Model: {self.current_model_key} (loaded)"
-        return "No model loaded"
+            return f"模型: {self.current_model_key} (已加载)"
+        return "未加载模型"
 
 
 model_manager = ModelManager()
@@ -90,14 +90,14 @@ def generate_tts(
     seed: int,
 ) -> tuple[tuple[int, np.ndarray] | None, str]:
     if not text or not text.strip():
-        raise gr.Error("Please enter text to synthesize.")
+        raise gr.Error("请输入要合成的文本。")
 
     try:
         model, tokenizer = model_manager.load(model_choice)
     except gr.Error:
         raise
     except Exception as e:
-        raise gr.Error(f"Failed to load model: {e}")
+        raise gr.Error(f"加载模型失败: {e}")
 
     device = model_manager.device
     torch.manual_seed(seed)
@@ -145,14 +145,14 @@ def generate_tts(
             segment_count += 1
 
     if not wav_segments:
-        raise gr.Error("No valid text to synthesize.")
+        raise gr.Error("没有有效的文本可合成。")
 
     # Concatenate all segments
     final_wav = np.concatenate(wav_segments)
     total_duration = len(final_wav) / sr
     info = (
-        f"Generated: {total_duration:.2f}s | Segments: {segment_count} | "
-        f"Model: {model_choice} | Steps: {nfe_steps}"
+        f"生成: {total_duration:.2f}秒 | 分段数: {segment_count} | "
+        f"模型: {model_choice} | 步数: {nfe_steps}"
     )
 
     return (sr, final_wav), info
@@ -169,18 +169,18 @@ def generate_clone(
     seed: int,
 ) -> tuple[tuple[int, np.ndarray] | None, str]:
     if prompt_audio is None:
-        raise gr.Error("Please upload a reference audio file.")
+        raise gr.Error("请上传参考音频文件。")
     if not prompt_text or not prompt_text.strip():
-        raise gr.Error("Please enter the reference audio text.")
+        raise gr.Error("请输入参考音频的文本内容。")
     if not target_text or not target_text.strip():
-        raise gr.Error("Please enter the target text to synthesize.")
+        raise gr.Error("请输入要合成的文本。")
 
     try:
         model, tokenizer = model_manager.load(model_choice)
     except gr.Error:
         raise
     except Exception as e:
-        raise gr.Error(f"Failed to load model: {e}")
+        raise gr.Error(f"加载模型失败: {e}")
 
     device = model_manager.device
     torch.manual_seed(seed)
@@ -252,14 +252,14 @@ def generate_clone(
             segment_count += 1
 
     if not wav_segments:
-        raise gr.Error("No valid target text to synthesize.")
+        raise gr.Error("没有有效的目标文本可合成。")
 
     # Concatenate all segments
     final_wav = np.concatenate(wav_segments)
     total_duration = len(final_wav) / sr
     info = (
-        f"Generated: {total_duration:.2f}s | Segments: {segment_count} | "
-        f"Model: {model_choice} | Steps: {nfe_steps}"
+        f"生成: {total_duration:.2f}秒 | 分段数: {segment_count} | "
+        f"模型: {model_choice} | 步数: {nfe_steps}"
     )
 
     return (sr, final_wav), info
@@ -270,11 +270,11 @@ def save_reference_package(
     prompt_text: str,
     package_name: str,
 ) -> str:
-    """Save reference audio and text as a zip package in samples directory."""
+    """保存参考音频和文本为 zip 包到 samples 目录。"""
     if prompt_audio is None:
-        raise gr.Error("Please upload a reference audio file.")
+        raise gr.Error("请上传参考音频文件。")
     if not prompt_text or not prompt_text.strip():
-        raise gr.Error("Please enter the reference audio text.")
+        raise gr.Error("请输入参考音频的文本内容。")
 
     samples_dir = "/app/samples"
     os.makedirs(samples_dir, exist_ok=True)
@@ -317,17 +317,17 @@ def save_reference_package(
         # Clean up temp directory
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        action = "Updated" if file_exists else "Saved"
-        return f"{action}: {zip_path}"
+        action = "更新" if file_exists else "保存"
+        return f"{action}成功: {zip_path}"
 
     except Exception as e:
         # Clean up temp directory on error
         shutil.rmtree(temp_dir, ignore_errors=True)
-        raise gr.Error(f"Failed to save package: {e}")
+        raise gr.Error(f"保存参考包失败: {e}")
 
 
 def list_reference_packages() -> list[str]:
-    """List all saved reference packages in samples directory."""
+    """列出 samples 目录中所有已保存的参考包。"""
     samples_dir = "/app/samples"
     if not os.path.isdir(samples_dir):
         return []
@@ -341,15 +341,15 @@ def list_reference_packages() -> list[str]:
 
 
 def load_reference_package(package_name: str) -> tuple[str | None, str]:
-    """Load reference audio and text from a saved package."""
+    """从已保存的包中加载参考音频和文本。"""
     if not package_name:
-        raise gr.Error("Please select a reference package.")
+        raise gr.Error("请选择一个参考包。")
     
     samples_dir = "/app/samples"
     zip_path = os.path.join(samples_dir, f"{package_name}.zip")
     
     if not os.path.isfile(zip_path):
-        raise gr.Error(f"Package not found: {package_name}")
+        raise gr.Error(f"参考包未找到: {package_name}")
     
     # Create temporary directory for extraction
     temp_dir = os.path.join(samples_dir, f"_load_temp_{package_name}")
@@ -369,12 +369,12 @@ def load_reference_package(package_name: str) -> tuple[str | None, str]:
                 break
         
         if audio_file is None:
-            raise gr.Error("No audio file found in package.")
+            raise gr.Error("参考包中未找到音频文件。")
         
         # Read text file
         text_file = os.path.join(temp_dir, "reference_text.txt")
         if not os.path.isfile(text_file):
-            raise gr.Error("No text file found in package.")
+            raise gr.Error("参考包中未找到文本文件。")
         
         with open(text_file, "r", encoding="utf-8") as f:
             text_content = f.read().strip()
@@ -395,11 +395,11 @@ def load_reference_package(package_name: str) -> tuple[str | None, str]:
     except Exception as e:
         # Clean up temp directory on error
         shutil.rmtree(temp_dir, ignore_errors=True)
-        raise gr.Error(f"Failed to load package: {e}")
+        raise gr.Error(f"加载参考包失败: {e}")
 
 
 def refresh_package_list() -> gr.Dropdown:
-    """Refresh the dropdown list of reference packages."""
+    """刷新参考包下拉列表。"""
     packages = list_reference_packages()
     return gr.Dropdown(choices=packages, value=None)
 
@@ -408,64 +408,64 @@ def build_ui() -> gr.Blocks:
     available_models = get_available_models()
 
     with gr.Blocks(
-        title="LongCat-AudioDiT TTS",
+        title="LongCat-AudioDiT 语音合成",
         theme=gr.themes.Soft(),
     ) as demo:
-        gr.Markdown("# LongCat-AudioDiT TTS & Voice Cloning")
+        gr.Markdown("# LongCat-AudioDiT 语音合成 & 声音克隆")
 
         with gr.Row():
             model_dropdown = gr.Dropdown(
                 choices=available_models,
                 value=available_models[0],
-                label="Model",
+                label="模型",
                 scale=3,
             )
             model_status = gr.Textbox(
-                value="No model loaded",
-                label="Status",
+                value="未加载模型",
+                label="状态",
                 interactive=False,
                 scale=4,
             )
-            load_btn = gr.Button("Load Model", scale=1, variant="primary")
+            load_btn = gr.Button("加载模型", scale=1, variant="primary")
 
         def on_load_model(model_key: str) -> str:
             try:
                 model_manager.load(model_key)
                 return model_manager.get_status()
             except Exception as e:
-                return f"Error: {e}"
+                return f"错误: {e}"
 
         load_btn.click(on_load_model, inputs=[model_dropdown], outputs=[model_status])
 
         with gr.Tabs():
-            with gr.Tab("TTS Synthesis"):
+            with gr.Tab("语音合成"):
                 with gr.Row():
                     with gr.Column(scale=2):
                         tts_text = gr.Textbox(
-                            label="Text to synthesize",
-                            placeholder="Enter text here...",
+                            label="合成文本",
+                            placeholder="请输入要合成的文本...",
                             lines=4,
                         )
-                        with gr.Accordion("Advanced Settings", open=False):
+                        with gr.Accordion("高级设置", open=False):
                             tts_nfe = gr.Slider(
                                 minimum=4, maximum=32, value=16, step=1,
-                                label="NFE Steps (ODE steps)",
+                                label="NFE 步数 (ODE 步数)",
                             )
                             with gr.Row():
                                 tts_guidance = gr.Dropdown(
                                     choices=["cfg", "apg"],
                                     value="cfg",
-                                    label="Guidance Method",
+                                    label="引导方法",
                                 )
                                 tts_strength = gr.Slider(
                                     minimum=1.0, maximum=10.0, value=4.0, step=0.5,
-                                    label="Guidance Strength",
+                                    label="引导强度",
                                 )
-                            tts_seed = gr.Number(value=1024, label="Seed", precision=0)
-                        tts_btn = gr.Button("Generate", variant="primary")
+                            tts_seed = gr.Number(value=1024, label="随机种子", precision=0)
+                        tts_btn = gr.Button("生成", variant="primary")
                     with gr.Column(scale=2):
-                        tts_output = gr.Audio(label="Output Audio", type="numpy")
-                        tts_info = gr.Textbox(label="Info", interactive=False)
+                        tts_output = gr.Audio(label="输出音频", type="numpy")
+                        tts_info = gr.Textbox(label="信息", interactive=False)
 
                 tts_btn.click(
                     generate_tts,
@@ -473,60 +473,60 @@ def build_ui() -> gr.Blocks:
                     outputs=[tts_output, tts_info],
                 )
 
-            with gr.Tab("Voice Cloning"):
+            with gr.Tab("声音克隆"):
                 with gr.Row():
                     with gr.Column(scale=1):
                         clone_target_text = gr.Textbox(
-                            label="Target Text",
-                            placeholder="Text to synthesize in the cloned voice...",
+                            label="目标文本",
+                            placeholder="要合成的文本...",
                             lines=6,
                         )
-                        with gr.Accordion("Load Saved Reference", open=True):
+                        with gr.Accordion("加载已保存的参考", open=True):
                             with gr.Row():
                                 package_dropdown = gr.Dropdown(
                                     choices=list_reference_packages(),
-                                    label="Saved Reference Packages",
+                                    label="已保存的参考包",
                                     scale=4,
                                 )
-                                refresh_btn = gr.Button("Refresh", scale=1, variant="secondary")
-                            load_btn = gr.Button("Load Selected Package", variant="secondary")
-                        with gr.Accordion("Save Reference", open=False):
+                                refresh_btn = gr.Button("刷新", scale=1, variant="secondary")
+                            load_btn = gr.Button("加载选中的参考包", variant="secondary")
+                        with gr.Accordion("保存参考", open=False):
                             package_name = gr.Textbox(
-                                label="Package Name",
-                                placeholder="Optional name for the reference package...",
+                                label="参考包名称",
+                                placeholder="可选的参考包名称...",
                             )
-                            save_btn = gr.Button("Save Reference Package", variant="secondary")
-                            save_info = gr.Textbox(label="Save Status", interactive=False)
+                            save_btn = gr.Button("保存参考包", variant="secondary")
+                            save_info = gr.Textbox(label="保存状态", interactive=False)
                     with gr.Column(scale=1):
                         clone_audio = gr.Audio(
-                            label="Reference Audio",
+                            label="参考音频",
                             type="filepath",
                         )
                         clone_prompt_text = gr.Textbox(
-                            label="Reference Audio Text",
-                            placeholder="Text content of the reference audio...",
+                            label="参考音频文本",
+                            placeholder="参考音频的文字内容...",
                             lines=2,
                         )
-                        with gr.Accordion("Advanced Settings", open=False):
+                        with gr.Accordion("高级设置", open=False):
                             clone_nfe = gr.Slider(
                                 minimum=4, maximum=32, value=16, step=1,
-                                label="NFE Steps (ODE steps)",
+                                label="NFE 步数 (ODE 步数)",
                             )
                             with gr.Row():
                                 clone_guidance = gr.Dropdown(
                                     choices=["cfg", "apg"],
                                     value="apg",
-                                    label="Guidance Method",
+                                    label="引导方法",
                                 )
                                 clone_strength = gr.Slider(
                                     minimum=1.0, maximum=10.0, value=4.0, step=0.5,
-                                    label="Guidance Strength",
+                                    label="引导强度",
                                 )
-                            clone_seed = gr.Number(value=1024, label="Seed", precision=0)
-                        clone_btn = gr.Button("Clone Voice", variant="primary")
+                            clone_seed = gr.Number(value=1024, label="随机种子", precision=0)
+                        clone_btn = gr.Button("克隆声音", variant="primary")
                     with gr.Column(scale=1):
-                        clone_output = gr.Audio(label="Output Audio", type="numpy")
-                        clone_info = gr.Textbox(label="Info", interactive=False)
+                        clone_output = gr.Audio(label="输出音频", type="numpy")
+                        clone_info = gr.Textbox(label="信息", interactive=False)
 
                 clone_btn.click(
                     generate_clone,
