@@ -124,17 +124,27 @@ def split_text_semantic(text: str, max_chars: int = 100) -> list[str]:
 
     # If text is short enough and already has proper punctuation, no need to split
     if len(text) <= max_chars:
-        return [ensure_punctuation(text)]
+        chunk = ensure_punctuation(text)
+        print(f"  [语义分割] 文本较短({len(text)}字), 不分割: \"{chunk}\"")
+        return [chunk]
 
     # Use semantic splitter with character-based length calculation
     splitter = TextSplitter(max_chars)
-    chunks = splitter.chunks(text)
+    raw_chunks = splitter.chunks(text)
 
     # Clean up and ensure punctuation on each chunk
     result = []
-    for chunk in chunks:
+    for i, chunk in enumerate(raw_chunks):
         chunk = chunk.strip()
         if chunk:
-            result.append(ensure_punctuation(chunk))
+            fixed = ensure_punctuation(chunk)
+            punct_added = fixed != chunk.rstrip()
+            print(f"  [语义分割] 段落 {i+1}/{len(raw_chunks)} ({len(chunk)}字) [补标点: {'是' if punct_added else '否'}]: \"{fixed}\"")
+            result.append(fixed)
 
-    return result if result else [ensure_punctuation(text)]
+    if not result:
+        fixed = ensure_punctuation(text)
+        print(f"  [语义分割] 分割结果为空, 使用原文: \"{fixed}\"")
+        result = [fixed]
+
+    return result

@@ -110,6 +110,9 @@ def generate_tts(
 
     # Split text by double newlines into paragraphs, then semantically split each paragraph
     paragraphs = text.split("\n\n")
+    print(f"\n{'='*60}")
+    print(f"[TTS推理] 开始推理 | 文本总长度: {len(text)}字 | 段落数: {len(paragraphs)}")
+    print(f"{'='*60}")
 
     wav_segments = []
     segment_count = 0
@@ -118,20 +121,29 @@ def generate_tts(
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
+            print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
             # Insert 500ms silence for empty paragraphs
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
             continue
 
+        print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 长度: {len(para)}字")
         # Semantic split within each paragraph
         chunks = split_text_semantic(para)
-        for chunk in chunks:
+        print(f"  -> 共分割为 {len(chunks)} 个语义块")
+
+        for chunk_idx, chunk in enumerate(chunks):
             normalized_text = normalize_mixed_text(chunk)
+            print(f"  [推理 {segment_count+1}] 文本: \"{chunk}\"")
+            print(f"  [推理 {segment_count+1}] 归一化: \"{normalized_text}\"")
+
             inputs = tokenizer([normalized_text], padding="longest", return_tensors="pt")
 
             dur_sec = approx_duration_from_text(chunk, max_duration=max_duration)
             duration = int(dur_sec * sr // full_hop)
             duration = min(duration, int(max_duration * sr // full_hop))
+
+            print(f"  [推理 {segment_count+1}] 预估时长: {dur_sec:.2f}s | duration参数: {duration} | 开始推理...")
 
             with torch.no_grad():
                 output = model(
@@ -145,11 +157,14 @@ def generate_tts(
                 )
 
             wav = output.waveform.squeeze().detach().cpu().numpy()
+            wav_duration = len(wav) / sr
             wav_segments.append(wav)
             segment_count += 1
+            print(f"  [推理 {segment_count}] 完成 | 音频时长: {wav_duration:.2f}s | 采样点数: {len(wav)}")
 
         # Insert silence between paragraphs (but not after the last one)
         if para_idx < len(paragraphs) - 1:
+            print(f"  [段落间] 插入 {silence_duration}s 静音")
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
 
@@ -215,9 +230,14 @@ def generate_clone(
     prompt_dur = plt.shape[-1]
 
     prompt_time = prompt_dur * full_hop / sr
+    norm_prompt_text = normalize_text(prompt_text)
 
     # Split target text by double newlines into paragraphs, then semantically split each paragraph
     paragraphs = target_text.split("\n\n")
+    print(f"\n{'='*60}")
+    print(f"[克隆推理] 开始推理 | 目标文本长度: {len(target_text)}字 | 段落数: {len(paragraphs)}")
+    print(f"[克隆推理] 参考音频时长: {prompt_time:.2f}s | 参考文本: \"{norm_prompt_text}\"")
+    print(f"{'='*60}")
 
     wav_segments = []
     segment_count = 0
@@ -225,19 +245,22 @@ def generate_clone(
 
     # Move prompt_wav to device once for reuse
     prompt_wav_device = prompt_wav.to(device)
-    norm_prompt_text = normalize_text(prompt_text)
 
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
+            print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
             # Insert 500ms silence for empty paragraphs
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
             continue
 
+        print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 长度: {len(para)}字")
         # Semantic split within each paragraph
         chunks = split_text_semantic(para)
-        for chunk in chunks:
+        print(f"  -> 共分割为 {len(chunks)} 个语义块")
+
+        for chunk_idx, chunk in enumerate(chunks):
             norm_target_text = normalize_mixed_text(chunk)
             full_text = f"{norm_prompt_text} {norm_target_text}"
             inputs = tokenizer([full_text], padding="longest", return_tensors="pt")
@@ -248,6 +271,10 @@ def generate_clone(
             dur_sec = dur_sec * ratio
             duration = int(dur_sec * sr // full_hop)
             duration = min(duration + prompt_dur, int(max_duration * sr // full_hop))
+
+            print(f"  [推理 {segment_count+1}] 文本: \"{chunk}\"")
+            print(f"  [推理 {segment_count+1}] 归一化: \"{norm_target_text}\"")
+            print(f"  [推理 {segment_count+1}] 预估时长: {dur_sec:.2f}s | duration参数: {duration} | 速率比: {ratio:.2f} | 开始推理...")
 
             with torch.no_grad():
                 output = model(
@@ -261,11 +288,14 @@ def generate_clone(
                 )
 
             wav = output.waveform.squeeze().detach().cpu().numpy()
+            wav_duration = len(wav) / sr
             wav_segments.append(wav)
             segment_count += 1
+            print(f"  [推理 {segment_count}] 完成 | 音频时长: {wav_duration:.2f}s | 采样点数: {len(wav)}")
 
         # Insert silence between paragraphs (but not after the last one)
         if para_idx < len(paragraphs) - 1:
+            print(f"  [段落间] 插入 {silence_duration}s 静音")
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
 
