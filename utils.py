@@ -72,7 +72,7 @@ def normalize_mixed_text(text: str, country: str = "auto") -> str:
     if country == "auto":
         # Auto-detect: if text contains more Chinese characters than English letters, convert
         num_zh = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
-        num_en = sum(1 for c in text if c.isalpha())
+        num_en = sum(1 for c in text if c.isascii() and c.isalpha())
         should_convert_to_cn = num_zh >= num_en
 
     # Convert Arabic numerals to Chinese reading form (Chinese mode only)
