@@ -88,6 +88,8 @@ def generate_tts(
     guidance_method: str,
     guidance_strength: float,
     seed: int,
+    silence_duration: float,
+    max_chars: int,
 ) -> tuple[tuple[int, np.ndarray] | None, str]:
     if not text or not text.strip():
         raise gr.Error("请输入要合成的文本。")
@@ -112,24 +114,22 @@ def generate_tts(
     paragraphs = text.split("\n\n")
     print(f"\n{'='*60}")
     print(f"[TTS推理] 开始推理 | 文本总长度: {len(text)}字 | 段落数: {len(paragraphs)}")
+    print(f"[TTS推理] 静音时长: {silence_duration}s | 最大分割字符数: {max_chars}")
     print(f"{'='*60}")
 
     wav_segments = []
     segment_count = 0
-    silence_duration = 0.5  # 500ms silence between paragraphs
 
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
             print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
-            # Insert 500ms silence for empty paragraphs
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
             continue
 
         print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 长度: {len(para)}字")
-        # Semantic split within each paragraph
-        chunks = split_text_semantic(para)
+        chunks = split_text_semantic(para, max_chars=max_chars)
         print(f"  -> 共分割为 {len(chunks)} 个语义块")
 
         for chunk_idx, chunk in enumerate(chunks):
@@ -162,7 +162,6 @@ def generate_tts(
             segment_count += 1
             print(f"  [推理 {segment_count}] 完成 | 音频时长: {wav_duration:.2f}s | 采样点数: {len(wav)}")
 
-        # Insert silence between paragraphs (but not after the last one)
         if para_idx < len(paragraphs) - 1:
             print(f"  [段落间] 插入 {silence_duration}s 静音")
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
@@ -191,6 +190,8 @@ def generate_clone(
     guidance_method: str,
     guidance_strength: float,
     seed: int,
+    silence_duration: float,
+    max_chars: int,
 ) -> tuple[tuple[int, np.ndarray] | None, str]:
     if prompt_audio is None:
         raise gr.Error("请上传参考音频文件。")
@@ -237,11 +238,11 @@ def generate_clone(
     print(f"\n{'='*60}")
     print(f"[克隆推理] 开始推理 | 目标文本长度: {len(target_text)}字 | 段落数: {len(paragraphs)}")
     print(f"[克隆推理] 参考音频时长: {prompt_time:.2f}s | 参考文本: \"{norm_prompt_text}\"")
+    print(f"[克隆推理] 静音时长: {silence_duration}s | 最大分割字符数: {max_chars}")
     print(f"{'='*60}")
 
     wav_segments = []
     segment_count = 0
-    silence_duration = 0.5  # 500ms silence between paragraphs
 
     # Move prompt_wav to device once for reuse
     prompt_wav_device = prompt_wav.to(device)
@@ -250,14 +251,12 @@ def generate_clone(
         para = para.strip()
         if not para:
             print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
-            # Insert 500ms silence for empty paragraphs
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
             continue
 
         print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 长度: {len(para)}字")
-        # Semantic split within each paragraph
-        chunks = split_text_semantic(para)
+        chunks = split_text_semantic(para, max_chars=max_chars)
         print(f"  -> 共分割为 {len(chunks)} 个语义块")
 
         for chunk_idx, chunk in enumerate(chunks):
@@ -293,7 +292,6 @@ def generate_clone(
             segment_count += 1
             print(f"  [推理 {segment_count}] 完成 | 音频时长: {wav_duration:.2f}s | 采样点数: {len(wav)}")
 
-        # Insert silence between paragraphs (but not after the last one)
         if para_idx < len(paragraphs) - 1:
             print(f"  [段落间] 插入 {silence_duration}s 静音")
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
@@ -510,6 +508,14 @@ def build_ui() -> gr.Blocks:
                                     label="引导强度",
                                 )
                             tts_seed = gr.Number(value=1024, label="随机种子", precision=0)
+                            with gr.Row():
+                                tts_silence = gr.Slider(
+                                    minimum=0.0, maximum=2.0, value=0.5, step=0.1,
+                                    label="段落间静音时长 (秒)",
+                                )
+                                tts_max_chars = gr.Number(
+                                    value=100, label="最大分割字符数", precision=0,
+                                )
                         tts_btn = gr.Button("生成", variant="primary")
                     with gr.Column(scale=2):
                         tts_output = gr.Audio(label="输出音频", type="numpy")
@@ -517,7 +523,7 @@ def build_ui() -> gr.Blocks:
 
                 tts_btn.click(
                     generate_tts,
-                    inputs=[tts_text, model_dropdown, tts_nfe, tts_guidance, tts_strength, tts_seed],
+                    inputs=[tts_text, model_dropdown, tts_nfe, tts_guidance, tts_strength, tts_seed, tts_silence, tts_max_chars],
                     outputs=[tts_output, tts_info],
                 )
 
@@ -571,6 +577,14 @@ def build_ui() -> gr.Blocks:
                                     label="引导强度",
                                 )
                             clone_seed = gr.Number(value=1024, label="随机种子", precision=0)
+                            with gr.Row():
+                                clone_silence = gr.Slider(
+                                    minimum=0.0, maximum=2.0, value=0.5, step=0.1,
+                                    label="段落间静音时长 (秒)",
+                                )
+                                clone_max_chars = gr.Number(
+                                    value=100, label="最大分割字符数", precision=0,
+                                )
                         clone_btn = gr.Button("克隆声音", variant="primary")
                     with gr.Column(scale=1):
                         clone_output = gr.Audio(label="输出音频", type="numpy")
@@ -581,6 +595,7 @@ def build_ui() -> gr.Blocks:
                     inputs=[
                         clone_audio, clone_prompt_text, clone_target_text,
                         model_dropdown, clone_nfe, clone_guidance, clone_strength, clone_seed,
+                        clone_silence, clone_max_chars,
                     ],
                     outputs=[clone_output, clone_info],
                 )
