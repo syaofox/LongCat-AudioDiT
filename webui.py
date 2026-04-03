@@ -624,6 +624,12 @@ def build_ui() -> gr.Blocks:
                     outputs=[clone_audio, clone_prompt_text],
                 )
 
+                package_dropdown.change(
+                    load_reference_package,
+                    inputs=[package_dropdown],
+                    outputs=[clone_audio, clone_prompt_text],
+                )
+
     return demo
 
 
