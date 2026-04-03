@@ -2,6 +2,8 @@
 
 import os
 import shutil
+import subprocess
+import sys
 import zipfile
 from datetime import datetime
 import numpy as np
@@ -47,23 +49,48 @@ class ModelManager:
             cls.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         return cls._instance
 
+    def _ensure_model(self, model_key: str) -> str:
+        """Ensure model exists locally, download if needed."""
+        model_dir = MODEL_DIRS.get(model_key)
+        if model_dir is None:
+            raise gr.Error(f"模型 {model_key} 配置未找到。")
+
+        if not os.path.isdir(model_dir):
+            print(f"模型 {model_key} 未找到，开始自动下载...")
+            script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_model.py")
+            dl_key = model_key.lower().replace("3.5b", "3.5b-bf16").replace("1b", "1b")
+            subprocess.run([sys.executable, script, dl_key], check=True)
+            if not os.path.isdir(model_dir):
+                raise gr.Error(f"模型 {model_key} 下载失败，请手动下载。")
+
+        return model_dir
+
+    def _ensure_tokenizer(self, model_dir: str) -> str:
+        """Ensure tokenizer exists locally, download if needed."""
+        tokenizer_path = os.path.join(os.path.dirname(model_dir), "umt5-base")
+        if os.path.isdir(tokenizer_path):
+            return tokenizer_path
+
+        print("Tokenizer 未找到，开始自动下载...")
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "download_model.py")
+        subprocess.run([sys.executable, script, "umt5"], check=True)
+        if not os.path.isdir(tokenizer_path):
+            raise gr.Error("Tokenizer 下载失败，请手动运行: python download_model.py umt5")
+
+        return tokenizer_path
+
     def load(self, model_key: str) -> tuple[AudioDiTModel, AutoTokenizer]:
         if model_key == self.current_model_key and self.model is not None:
             return self.model, self.tokenizer
 
-        model_dir = MODEL_DIRS.get(model_key)
-        if model_dir is None or not os.path.isdir(model_dir):
-            raise gr.Error(f"模型 {model_key} 未找到，请先下载。")
+        model_dir = self._ensure_model(model_key)
+        tokenizer_path = self._ensure_tokenizer(model_dir)
 
         print(f"正在加载模型 {model_key}，路径: {model_dir}...")
         self.model = AudioDiTModel.from_pretrained(model_dir, local_files_only=True).to(self.device)
         self.model.vae.to_half()
         self.model.eval()
-        tokenizer_path = os.path.join(os.path.dirname(model_dir), "umt5-base")
-        if os.path.isdir(tokenizer_path):
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
-        else:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model.config.text_encoder_model, local_files_only=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
         self.current_model_key = model_key
         print(f"模型 {model_key} 加载完成。")
 
