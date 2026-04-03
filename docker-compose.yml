@@ -18,6 +18,7 @@ services:
       - ./outputs:/app/outputs
       - ./assets:/app/assets
       - ./samples:/app/samples
+      - ./polyphone_rules.json:/app/polyphone_rules.json
       # webui开发时挂载
       - ./:/app
     ports:

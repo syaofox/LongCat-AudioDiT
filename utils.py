@@ -1,8 +1,18 @@
 import re
+import json
+import os
 import librosa
 import torch
 import cn2an
 from semantic_text_splitter import TextSplitter
+
+# Polyphone rules config file path (relative to this file or absolute)
+_POLYPHONE_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "polyphone_rules.json")
+
+# Default rules used when config file is missing or invalid
+_DEFAULT_POLYPHONE_RULES = {
+    "银行[行]长": "航",
+}
 
 def load_audio(wavpath, sr):
     audio, _ = librosa.load(wavpath, sr=sr, mono=True)
@@ -160,3 +170,113 @@ def split_text_semantic(text: str, max_chars: int = 100) -> list[str]:
         result = [fixed]
 
     return result
+
+
+# ─── Polyphone Rules ────────────────────────────────────────────────────────
+
+def load_polyphone_rules(config_path: str | None = None) -> dict[str, str]:
+    """Load polyphone replacement rules from a JSON config file.
+
+    Args:
+        config_path: Path to the JSON config file. Defaults to polyphone_rules.json
+            in the same directory as this module.
+
+    Returns:
+        Dict of pattern → replacement rules. Falls back to defaults if file is missing.
+    """
+    path = config_path or _POLYPHONE_CONFIG_PATH
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            rules = data.get("rules", {})
+            if rules:
+                print(f"[多音字] 从 {path} 加载了 {len(rules)} 条规则")
+                return rules
+        except Exception as e:
+            print(f"[多音字] 加载配置文件失败 ({e}), 使用默认规则")
+    print(f"[多音字] 使用内置默认规则 ({len(_DEFAULT_POLYPHONE_RULES)} 条)")
+    return dict(_DEFAULT_POLYPHONE_RULES)
+
+
+def save_polyphone_rules(rules: dict[str, str], config_path: str | None = None) -> str:
+    """Save polyphone replacement rules to a JSON config file.
+
+    Args:
+        rules: Dict of pattern → replacement rules.
+        config_path: Path to save the JSON config file. Defaults to polyphone_rules.json
+            in the same directory as this module.
+
+    Returns:
+        Path to the saved file.
+    """
+    path = config_path or _POLYPHONE_CONFIG_PATH
+    data = {"rules": rules}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    print(f"[多音字] 已保存 {len(rules)} 条规则到 {path}")
+    return path
+
+
+def apply_polyphone_rules(text: str, rules: dict[str, str] | None = None) -> tuple[str, list[str]]:
+    """Apply polyphone replacement rules to text.
+
+    Rule format:
+        - "[行长]" → "航长" : No context, replace the whole pattern (brackets stripped)
+        - "银行[行]长" → "航" : With context, replace only the bracketed char in the full pattern
+
+    Rules are applied in descending order of pattern length to prioritize
+    context-specific rules over generic ones.
+
+    Args:
+        text: Input text to process.
+        rules: Dict of pattern → replacement. If None, loads from config file.
+
+    Returns:
+        Tuple of (processed_text, list_of_log_messages).
+    """
+    if rules is None:
+        rules = load_polyphone_rules()
+
+    if not rules:
+        return text, []
+
+    logs = []
+
+    # Sort rules by pattern length descending (longer patterns = more context = higher priority)
+    sorted_rules = sorted(rules.items(), key=lambda x: len(x[0]), reverse=True)
+
+    result = text
+
+    for pattern, replacement in sorted_rules:
+        if "[" not in pattern:
+            # No context: pattern is "[词]" → replace "词" with replacement
+            # e.g., "[行长]" → "航长" means replace "行长" with "航长"
+            word = pattern.strip("[]")
+            if word not in result:
+                continue
+            # Check if the text has the bracketed form "[词]" — preserve brackets
+            bracketed_form = f"[{word}]"
+            if bracketed_form in result:
+                result = result.replace(bracketed_form, f"[{replacement}]")
+                logs.append(f"[多音字] \"{bracketed_form}\" → \"[{replacement}]\" (规则: {pattern}→{replacement})")
+            else:
+                result = result.replace(word, replacement)
+                logs.append(f"[多音字] \"{word}\" → \"{replacement}\" (规则: {pattern}→{replacement})")
+        else:
+            # With context: pattern has brackets inside
+            # e.g., "银行[行]长" → "航" means find "银行行长", replace "行" with "航"
+            bracket_start = pattern.index("[")
+            bracket_end = pattern.index("]")
+            context_before = pattern[:bracket_start]
+            char_to_replace = pattern[bracket_start + 1:bracket_end]
+            context_after = pattern[bracket_end + 1:]
+
+            full_pattern = context_before + char_to_replace + context_after
+            full_replacement = context_before + replacement + context_after
+
+            if full_pattern in result:
+                result = result.replace(full_pattern, full_replacement)
+                logs.append(f"[多音字] \"{full_pattern}\" → \"{full_replacement}\" (规则: {pattern}→{replacement})")
+
+    return result, logs

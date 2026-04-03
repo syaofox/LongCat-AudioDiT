@@ -14,6 +14,7 @@ import audiodit  # auto-registers AudioDiTConfig/AudioDiTModel
 from audiodit import AudioDiTModel
 from transformers import AutoTokenizer
 from utils import normalize_text, normalize_mixed_text, load_audio, approx_duration_from_text, split_text_semantic
+from utils import load_polyphone_rules, save_polyphone_rules, apply_polyphone_rules, _DEFAULT_POLYPHONE_RULES
 
 torch.backends.cudnn.benchmark = False
 
@@ -26,8 +27,8 @@ else:
 
 # Model configurations
 MODEL_DIRS = {
-    "1B": "/models/LongCat-AudioDiT-1B",
     "3.5B": "/models/LongCat-AudioDiT-3.5B",
+    "1B": "/models/LongCat-AudioDiT-1B",    
 }
 
 
@@ -78,7 +79,7 @@ def get_available_models() -> list[str]:
     for key, path in MODEL_DIRS.items():
         if os.path.isdir(path):
             available.append(key)
-    return available if available else ["1B"]
+    return available if available else ["3.5B"]
 
 
 def generate_tts(
@@ -120,6 +121,9 @@ def generate_tts(
     wav_segments = []
     segment_count = 0
 
+    # Load polyphone rules once
+    polyphone_rules = load_polyphone_rules()
+
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
@@ -133,8 +137,15 @@ def generate_tts(
         print(f"  -> 共分割为 {len(chunks)} 个语义块")
 
         for chunk_idx, chunk in enumerate(chunks):
-            normalized_text = normalize_mixed_text(chunk)
+            # Apply polyphone replacement before normalization
+            polyphone_text, polyphone_logs = apply_polyphone_rules(chunk, rules=polyphone_rules)
+            for log_msg in polyphone_logs:
+                print(f"  {log_msg}")
+
+            normalized_text = normalize_mixed_text(polyphone_text)
             print(f"  [推理 {segment_count+1}] 文本: \"{chunk}\"")
+            if polyphone_text != chunk:
+                print(f"  [推理 {segment_count+1}] 多音字替换: \"{chunk}\" → \"{polyphone_text}\"")
             print(f"  [推理 {segment_count+1}] 归一化: \"{normalized_text}\"")
 
             inputs = tokenizer([normalized_text], padding="longest", return_tensors="pt")
@@ -248,6 +259,9 @@ def generate_clone(
     # Move prompt_wav to device once for reuse
     prompt_wav_device = prompt_wav.to(device)
 
+    # Load polyphone rules once
+    polyphone_rules = load_polyphone_rules()
+
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
@@ -261,7 +275,12 @@ def generate_clone(
         print(f"  -> 共分割为 {len(chunks)} 个语义块")
 
         for chunk_idx, chunk in enumerate(chunks):
-            norm_target_text = normalize_mixed_text(chunk, country=country)
+            # Apply polyphone replacement before normalization
+            polyphone_text, polyphone_logs = apply_polyphone_rules(chunk, rules=polyphone_rules)
+            for log_msg in polyphone_logs:
+                print(f"  {log_msg}")
+
+            norm_target_text = normalize_mixed_text(polyphone_text, country=country)
             full_text = f"{norm_prompt_text} {norm_target_text}"
             inputs = tokenizer([full_text], padding="longest", return_tensors="pt")
 
@@ -273,6 +292,8 @@ def generate_clone(
             duration = min(duration + prompt_dur, int(max_duration * sr // full_hop))
 
             print(f"  [推理 {segment_count+1}] 文本: \"{chunk}\"")
+            if polyphone_text != chunk:
+                print(f"  [推理 {segment_count+1}] 多音字替换: \"{chunk}\" → \"{polyphone_text}\"")
             print(f"  [推理 {segment_count+1}] 归一化: \"{norm_target_text}\"")
             print(f"  [推理 {segment_count+1}] 预估时长: {dur_sec:.2f}s | duration参数: {duration} | 速率比: {ratio:.2f} | 开始推理...")
 
@@ -628,6 +649,122 @@ def build_ui() -> gr.Blocks:
                     load_reference_package,
                     inputs=[package_dropdown],
                     outputs=[clone_audio, clone_prompt_text],
+                )
+
+            with gr.Tab("多音字规则"):
+                with gr.Row():
+                    with gr.Column(scale=3):
+                        gr.Markdown(
+                            "### 多音字替换规则\n\n"
+                            "**规则格式说明：**\n\n"
+                            "- `[行长] 航长`：无上下文，直接替换整个词\n"
+                            "- `银行[行]长 航`：有上下文，只替换括号内的字\n\n"
+                            "**示例：**\n\n"
+                            "- `[行长] 航长`：匹配到行长就替换为航长\n"
+                            "- `银行[行]长 航`：匹配到银行行长时，只将行替换为航，结果为银行航长\n"
+                            "- `银[行]卡 航`：匹配到银行卡时，替换为银航卡\n\n"
+                            "**优先级：** 规则按匹配长度降序应用，长的（带上下文的）规则优先。\n\n"
+                            "**格式：** 每行一条规则，用空格分隔：`模式 替换值`"
+                        )
+                        polyphone_rules_text = gr.Textbox(
+                            label="规则列表",
+                            placeholder="每行一条规则，用空格分隔：模式 替换值",
+                            lines=20,
+                            max_lines=50,
+                        )
+                        with gr.Row():
+                            polyphone_save_btn = gr.Button("保存规则", variant="primary")
+                            polyphone_reload_btn = gr.Button("重新加载", variant="secondary")
+                            polyphone_reset_btn = gr.Button("重置为默认", variant="stop")
+                        polyphone_save_info = gr.Textbox(label="保存状态", interactive=False)
+                    with gr.Column(scale=2):
+                        gr.Markdown(
+                            "### 测试\n\n"
+                            "输入文本，查看多音字替换效果："
+                        )
+                        polyphone_test_input = gr.Textbox(
+                            label="测试文本",
+                            placeholder="输入包含多音字的文本...",
+                            lines=3,
+                        )
+                        polyphone_test_btn = gr.Button("测试替换")
+                        polyphone_test_output = gr.Textbox(
+                            label="替换结果",
+                            interactive=False,
+                            lines=6,
+                        )
+
+                def _parse_rules_text(rules_text: str) -> dict[str, str]:
+                    rules = {}
+                    for line in rules_text.strip().split("\n"):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = line.split(None, 1)
+                        if len(parts) == 2:
+                            pattern, replacement = parts[0].strip(), parts[1].strip()
+                            if pattern and replacement:
+                                rules[pattern] = replacement
+                    return rules
+
+                def _format_rules_text(rules: dict[str, str]) -> str:
+                    lines = []
+                    for pattern, replacement in sorted(rules.items(), key=lambda x: len(x[0]), reverse=True):
+                        lines.append(f"{pattern} {replacement}")
+                    return "\n".join(lines)
+
+                def _load_rules_to_ui() -> str:
+                    rules = load_polyphone_rules()
+                    return _format_rules_text(rules)
+
+                def _save_rules_from_ui(rules_text: str) -> str:
+                    rules = _parse_rules_text(rules_text)
+                    try:
+                        save_polyphone_rules(rules)
+                        return f"保存成功，共 {len(rules)} 条规则"
+                    except Exception as e:
+                        return f"保存失败: {e}"
+
+                def _reset_rules() -> tuple[str, str]:
+                    try:
+                        save_polyphone_rules(dict(_DEFAULT_POLYPHONE_RULES))
+                        return _format_rules_text(_DEFAULT_POLYPHONE_RULES), "已重置为默认规则"
+                    except Exception as e:
+                        return "", f"重置失败: {e}"
+
+                def _test_rules(rules_text: str, test_text: str) -> str:
+                    rules = _parse_rules_text(rules_text)
+                    if not test_text:
+                        return "请输入测试文本"
+                    result, logs = apply_polyphone_rules(test_text, rules=rules)
+                    output_lines = [f"原文: {test_text}", f"结果: {result}", ""]
+                    if logs:
+                        output_lines.append("--- 替换日志 ---")
+                        output_lines.extend(logs)
+                    else:
+                        output_lines.append("(无替换)")
+                    return "\n".join(output_lines)
+
+                polyphone_rules_text.value = _load_rules_to_ui()
+                polyphone_save_btn.click(
+                    _save_rules_from_ui,
+                    inputs=[polyphone_rules_text],
+                    outputs=[polyphone_save_info],
+                )
+                polyphone_reload_btn.click(
+                    _load_rules_to_ui,
+                    inputs=[],
+                    outputs=[polyphone_rules_text],
+                )
+                polyphone_reset_btn.click(
+                    _reset_rules,
+                    inputs=[],
+                    outputs=[polyphone_rules_text, polyphone_save_info],
+                )
+                polyphone_test_btn.click(
+                    _test_rules,
+                    inputs=[polyphone_rules_text, polyphone_test_input],
+                    outputs=[polyphone_test_output],
                 )
 
     return demo
