@@ -6,3 +6,5 @@ numpy>=1.24.0
 einops>=0.8.0
 gradio>=4.0.0
 huggingface_hub>=0.20.0
+semantic-text-splitter>=0.29.0
+cn2an>=0.5.23

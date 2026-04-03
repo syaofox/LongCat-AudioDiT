@@ -13,7 +13,7 @@ import gradio as gr
 import audiodit  # auto-registers AudioDiTConfig/AudioDiTModel
 from audiodit import AudioDiTModel
 from transformers import AutoTokenizer
-from utils import normalize_text, load_audio, approx_duration_from_text
+from utils import normalize_text, normalize_mixed_text, load_audio, approx_duration_from_text, split_text_semantic
 
 torch.backends.cudnn.benchmark = False
 
@@ -108,24 +108,28 @@ def generate_tts(
     full_hop = model.config.latent_hop
     max_duration = model.config.max_wav_duration
 
-    # Split text by newlines (keep empty lines for silence insertion)
-    lines = text.split("\n")
-    
+    # Split text by double newlines into paragraphs, then semantically split each paragraph
+    paragraphs = text.split("\n\n")
+
     wav_segments = []
     segment_count = 0
-    silence_duration = 0.5  # 500ms silence for empty lines
+    silence_duration = 0.5  # 500ms silence between paragraphs
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            # Insert 500ms silence for empty lines
+    for para_idx, para in enumerate(paragraphs):
+        para = para.strip()
+        if not para:
+            # Insert 500ms silence for empty paragraphs
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
-        else:
-            normalized_text = normalize_text(line)
+            continue
+
+        # Semantic split within each paragraph
+        chunks = split_text_semantic(para)
+        for chunk in chunks:
+            normalized_text = normalize_mixed_text(chunk)
             inputs = tokenizer([normalized_text], padding="longest", return_tensors="pt")
 
-            dur_sec = approx_duration_from_text(line, max_duration=max_duration)
+            dur_sec = approx_duration_from_text(chunk, max_duration=max_duration)
             duration = int(dur_sec * sr // full_hop)
             duration = min(duration, int(max_duration * sr // full_hop))
 
@@ -143,6 +147,11 @@ def generate_tts(
             wav = output.waveform.squeeze().detach().cpu().numpy()
             wav_segments.append(wav)
             segment_count += 1
+
+        # Insert silence between paragraphs (but not after the last one)
+        if para_idx < len(paragraphs) - 1:
+            silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
+            wav_segments.append(silence_wav)
 
     if not wav_segments:
         raise gr.Error("没有有效的文本可合成。")
@@ -207,29 +216,33 @@ def generate_clone(
 
     prompt_time = prompt_dur * full_hop / sr
 
-    # Split target text by newlines (keep empty lines for silence insertion)
-    lines = target_text.split("\n")
-    
+    # Split target text by double newlines into paragraphs, then semantically split each paragraph
+    paragraphs = target_text.split("\n\n")
+
     wav_segments = []
     segment_count = 0
-    silence_duration = 0.5  # 500ms silence for empty lines
+    silence_duration = 0.5  # 500ms silence between paragraphs
 
     # Move prompt_wav to device once for reuse
     prompt_wav_device = prompt_wav.to(device)
     norm_prompt_text = normalize_text(prompt_text)
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            # Insert 500ms silence for empty lines
+    for para_idx, para in enumerate(paragraphs):
+        para = para.strip()
+        if not para:
+            # Insert 500ms silence for empty paragraphs
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
-        else:
-            norm_target_text = normalize_text(line)
+            continue
+
+        # Semantic split within each paragraph
+        chunks = split_text_semantic(para)
+        for chunk in chunks:
+            norm_target_text = normalize_mixed_text(chunk)
             full_text = f"{norm_prompt_text} {norm_target_text}"
             inputs = tokenizer([full_text], padding="longest", return_tensors="pt")
 
-            dur_sec = approx_duration_from_text(line, max_duration=max_duration - prompt_time)
+            dur_sec = approx_duration_from_text(chunk, max_duration=max_duration - prompt_time)
             approx_pd = approx_duration_from_text(prompt_text, max_duration=max_duration)
             ratio = np.clip(prompt_time / approx_pd, 1.0, 1.5)
             dur_sec = dur_sec * ratio
@@ -250,6 +263,11 @@ def generate_clone(
             wav = output.waveform.squeeze().detach().cpu().numpy()
             wav_segments.append(wav)
             segment_count += 1
+
+        # Insert silence between paragraphs (but not after the last one)
+        if para_idx < len(paragraphs) - 1:
+            silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
+            wav_segments.append(silence_wav)
 
     if not wav_segments:
         raise gr.Error("没有有效的目标文本可合成。")
