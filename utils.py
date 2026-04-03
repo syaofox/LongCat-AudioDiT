@@ -49,11 +49,15 @@ _ALL_PUNCT = _TERMINAL_PUNCT | _SOFT_PUNCT
 _CONNECTOR_WORDS = ("但是", "然而", "不过", "可是", "而且", "并且", "同时", "另外", "然后", "接着", "但", "而", "且")
 
 
-def normalize_mixed_text(text: str) -> str:
+def normalize_mixed_text(text: str, country: str = "auto") -> str:
     """Normalize mixed Chinese-English text: numbers to Chinese, abbreviations expanded, then basic cleanup.
 
     Args:
         text: Raw text that may contain Arabic numerals and English abbreviations.
+        country: Target language/country for normalization.
+            "auto" - auto-detect based on text content
+            "zh" - Chinese (convert numbers to Chinese reading form)
+            "en" - English (keep numbers as Arabic numerals, expand abbreviations)
 
     Returns:
         Normalized text suitable for TTS tokenization.
@@ -63,12 +67,20 @@ def normalize_mixed_text(text: str) -> str:
     for abbr, expansion in _ABBREVIATIONS.items():
         lower_text = lower_text.replace(abbr, expansion)
 
-    # Convert Arabic numerals to Chinese reading form
-    # cn2an.transform with "an2cn" converts numbers in sentences to Chinese
-    try:
-        lower_text = cn2an.transform(lower_text, "an2cn")
-    except Exception:
-        pass  # Fallback: keep original text if conversion fails
+    # Determine if we should convert numbers to Chinese
+    should_convert_to_cn = country == "zh"
+    if country == "auto":
+        # Auto-detect: if text contains more Chinese characters than English letters, convert
+        num_zh = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
+        num_en = sum(1 for c in text if c.isalpha())
+        should_convert_to_cn = num_zh >= num_en
+
+    # Convert Arabic numerals to Chinese reading form (Chinese mode only)
+    if should_convert_to_cn:
+        try:
+            lower_text = cn2an.transform(lower_text, "an2cn")
+        except Exception:
+            pass  # Fallback: keep original text if conversion fails
 
     # Apply original normalization
     return normalize_text(lower_text)

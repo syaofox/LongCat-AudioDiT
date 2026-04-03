@@ -19,7 +19,7 @@ services:
       - ./assets:/app/assets
       - ./samples:/app/samples
       # webui开发时挂载
-      - ./webui.py:/app/webui.py
+      - ./:/app
     ports:
       - "7860:7860"
     restart: unless-stopped

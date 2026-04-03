@@ -192,6 +192,7 @@ def generate_clone(
     seed: int,
     silence_duration: float,
     max_chars: int,
+    country: str,
 ) -> tuple[tuple[int, np.ndarray] | None, str]:
     if prompt_audio is None:
         raise gr.Error("请上传参考音频文件。")
@@ -238,7 +239,7 @@ def generate_clone(
     print(f"\n{'='*60}")
     print(f"[克隆推理] 开始推理 | 目标文本长度: {len(target_text)}字 | 段落数: {len(paragraphs)}")
     print(f"[克隆推理] 参考音频时长: {prompt_time:.2f}s | 参考文本: \"{norm_prompt_text}\"")
-    print(f"[克隆推理] 静音时长: {silence_duration}s | 最大分割字符数: {max_chars}")
+    print(f"[克隆推理] 静音时长: {silence_duration}s | 最大分割字符数: {max_chars} | 语言: {country}")
     print(f"{'='*60}")
 
     wav_segments = []
@@ -260,7 +261,7 @@ def generate_clone(
         print(f"  -> 共分割为 {len(chunks)} 个语义块")
 
         for chunk_idx, chunk in enumerate(chunks):
-            norm_target_text = normalize_mixed_text(chunk)
+            norm_target_text = normalize_mixed_text(chunk, country=country)
             full_text = f"{norm_prompt_text} {norm_target_text}"
             inputs = tokenizer([full_text], padding="longest", return_tensors="pt")
 
@@ -577,6 +578,11 @@ def build_ui() -> gr.Blocks:
                                     label="引导强度",
                                 )
                             clone_seed = gr.Number(value=1024, label="随机种子", precision=0)
+                            clone_country = gr.Dropdown(
+                                choices=["auto", "zh", "en", "ja", "ko", "fr", "de", "es", "ru"],
+                                value="auto",
+                                label="说话人语言/国家 (自动检测)",
+                            )
                             with gr.Row():
                                 clone_silence = gr.Slider(
                                     minimum=0.0, maximum=2.0, value=0.5, step=0.1,
@@ -595,7 +601,7 @@ def build_ui() -> gr.Blocks:
                     inputs=[
                         clone_audio, clone_prompt_text, clone_target_text,
                         model_dropdown, clone_nfe, clone_guidance, clone_strength, clone_seed,
-                        clone_silence, clone_max_chars,
+                        clone_silence, clone_max_chars, clone_country,
                     ],
                     outputs=[clone_output, clone_info],
                 )
