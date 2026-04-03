@@ -8,7 +8,8 @@ from huggingface_hub import snapshot_download
 
 MODELS = {
     "1b": "meituan-longcat/LongCat-AudioDiT-1B",
-    "3.5b": "meituan-longcat/LongCat-AudioDiT-3.5B",
+    "3.5b-bf16": "drbaph/LongCat-AudioDiT-3.5B-bf16",
+    "umt5": "google/umt5-base",
 }
 
 
@@ -27,18 +28,28 @@ def main():
     if len(sys.argv) < 2:
         print("Usage:")
         print("  python download_model.py 1b          # Download 1B model")
-        print("  python download_model.py 3.5b        # Download 3.5B model")
-        print("  python download_model.py all          # Download both models")
+        print("  python download_model.py 3.5b-bf16   # Download 3.5B bf16 model")
+        print("  python download_model.py umt5        # Download UMT5 tokenizer/model")
+        print("  python download_model.py all          # Download all models")
         print("  python download_model.py <repo_id> <local_dir>  # Custom")
         sys.exit(1)
 
     target = sys.argv[1].lower()
 
-    if target in MODELS:
-        download_model(MODELS[target], f"./models/LongCat-AudioDiT-{target.upper()}")
+    if target == "1b":
+        download_model(MODELS[target], "./models/LongCat-AudioDiT-1B")
+    elif target == "3.5b-bf16":
+        download_model(MODELS[target], "./models/LongCat-AudioDiT-3.5B-bf16")
+    elif target == "umt5":
+        download_model(MODELS[target], "./models/umt5-base")
     elif target == "all":
         for name, repo_id in MODELS.items():
-            download_model(repo_id, f"./models/LongCat-AudioDiT-{name.upper()}")
+            if name == "umt5":
+                download_model(repo_id, "./models/umt5-base")
+            elif name == "1b":
+                download_model(repo_id, "./models/LongCat-AudioDiT-1B")
+            elif name == "3.5b-bf16":
+                download_model(repo_id, "./models/LongCat-AudioDiT-3.5B-bf16")
     else:
         # Custom repo_id and local_dir
         local_dir = sys.argv[2] if len(sys.argv) > 2 else "./models/custom"

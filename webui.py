@@ -27,8 +27,8 @@ else:
 
 # Model configurations
 MODEL_DIRS = {
-    "3.5B": "/models/LongCat-AudioDiT-3.5B",
-    "1B": "/models/LongCat-AudioDiT-1B",    
+    "3.5B": "./models/LongCat-AudioDiT-3.5B-bf16",
+    "1B": "./models/LongCat-AudioDiT-1B",
 }
 
 
@@ -59,7 +59,11 @@ class ModelManager:
         self.model = AudioDiTModel.from_pretrained(model_dir, local_files_only=True).to(self.device)
         self.model.vae.to_half()
         self.model.eval()
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model.config.text_encoder_model, local_files_only=True)
+        tokenizer_path = os.path.join(os.path.dirname(model_dir), "umt5-base")
+        if os.path.isdir(tokenizer_path):
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, local_files_only=True)
+        else:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model.config.text_encoder_model, local_files_only=True)
         self.current_model_key = model_key
         print(f"模型 {model_key} 加载完成。")
 
