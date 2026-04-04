@@ -158,9 +158,10 @@ def generate_tts(
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
-            print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
-            silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
-            wav_segments.append(silence_wav)
+            if silence_duration > 0:
+                print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
+                silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
+                wav_segments.append(silence_wav)
             continue
 
         print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 长度: {len(para)}字")
@@ -204,7 +205,7 @@ def generate_tts(
             segment_count += 1
             print(f"  [推理 {segment_count}] 完成 | 音频时长: {wav_duration:.2f}s | 采样点数: {len(wav)}")
 
-        if para_idx < len(paragraphs) - 1:
+        if para_idx < len(paragraphs) - 1 and silence_duration > 0:
             print(f"  [段落间] 插入 {silence_duration}s 静音")
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
@@ -296,9 +297,10 @@ def generate_clone(
     for para_idx, para in enumerate(paragraphs):
         para = para.strip()
         if not para:
-            print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
-            silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
-            wav_segments.append(silence_wav)
+            if silence_duration > 0:
+                print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 空段落, 插入 {silence_duration}s 静音")
+                silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
+                wav_segments.append(silence_wav)
             continue
 
         print(f"\n[段落 {para_idx+1}/{len(paragraphs)}] 长度: {len(para)}字")
@@ -345,7 +347,7 @@ def generate_clone(
             segment_count += 1
             print(f"  [推理 {segment_count}] 完成 | 音频时长: {wav_duration:.2f}s | 采样点数: {len(wav)}")
 
-        if para_idx < len(paragraphs) - 1:
+        if para_idx < len(paragraphs) - 1 and silence_duration > 0:
             print(f"  [段落间] 插入 {silence_duration}s 静音")
             silence_wav = np.zeros(int(sr * silence_duration), dtype=np.float32)
             wav_segments.append(silence_wav)
