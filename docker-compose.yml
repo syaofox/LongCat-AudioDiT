@@ -1,58 +1,36 @@
 services:
-  asr:
-    build:
-      context: .
-      dockerfile: Dockerfile.asr
-      args:
-        UID: 1000
-        GID: 1000
-    image: audiodit-asr:latest
-    container_name: audiodit-asr
-    runtime: nvidia
-    user: "1000:1000"
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=0
-      - ASR_HOST=0.0.0.0
-      - ASR_PORT=8000
-      - ASR_MODEL_PATH=./models/Qwen3-ASR-0.6B
-    volumes:
-      - ./models:/app/models
-    ports:
-      - "8000:8000"
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    restart: unless-stopped
-
   webui:
     build:
       context: .
       args:
-        UID: 1000
-        GID: 1000
+        UID: ${PUID:-1000}
+        GID: ${PGID:-1000}
+        APT_MIRROR: ${APT_MIRROR:-}
+        PIP_MIRROR: ${PIP_MIRROR:-}
+        GH_PROXY: ${GH_PROXY:-}
     image: audiodit-webui:latest
     container_name: audiodit-webui
     runtime: nvidia
-    user: "1000:1000"
+    user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - GRADIO_SERVER_NAME=0.0.0.0
       - GRADIO_SERVER_PORT=7860
-      - ASR_SERVER_URL=http://asr:8000
+      - ASR_MODEL_PATH=./models/Qwen3-ASR-0.6B-ONNX
+      - ASR_QUANT=int4
+      - HF_ENDPOINT=${GH_PROXY:+${GH_PROXY}/https://huggingface.co}
     volumes:
       - ./models:/app/models
       - ./outputs:/app/outputs
       - ./assets:/app/assets
       - ./samples:/app/samples
       - ./polyphone_rules.json:/app/polyphone_rules.json
-      # webui开发时挂载代码
-      - ./:/app
     ports:
       - "7860:7860"
-    depends_on:
-      asr:
-        condition: service_started
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:7860')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
     restart: unless-stopped

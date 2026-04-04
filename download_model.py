@@ -11,16 +11,30 @@ MODELS = {
     "3.5b-bf16": "drbaph/LongCat-AudioDiT-3.5B-bf16",
     "umt5": "google/umt5-base",
     "asr-0.6b": "Qwen/Qwen3-ASR-0.6B",
+    "asr-0.6b-onnx": "andrewleech/qwen3-asr-0.6b-onnx",
 }
 
 
-def download_model(model_id: str, local_dir: str) -> None:
+ASR_ONNX_INT4_PATTERNS = [
+    "encoder.int4.onnx",
+    "decoder_init.int4.onnx",
+    "decoder_step.int4.onnx",
+    "decoder_weights.int4.data",
+    "embed_tokens.bin",
+    "config.json",
+    "tokenizer.json",
+    "preprocessor_config.json",
+]
+
+
+def download_model(model_id: str, local_dir: str, allow_patterns: list[str] | None = None) -> None:
     print(f"Downloading {model_id} to {local_dir}...")
     os.makedirs(local_dir, exist_ok=True)
     snapshot_download(
         repo_id=model_id,
         local_dir=local_dir,
         local_dir_use_symlinks=False,
+        allow_patterns=allow_patterns,
     )
     print(f"Done: {local_dir}")
 
@@ -45,6 +59,8 @@ def main():
         download_model(MODELS[target], "./models/umt5-base")
     elif target == "asr-0.6b":
         download_model(MODELS[target], "./models/Qwen3-ASR-0.6B")
+    elif target == "asr-0.6b-onnx":
+        download_model(MODELS[target], "./models/Qwen3-ASR-0.6B-ONNX", allow_patterns=ASR_ONNX_INT4_PATTERNS)
     elif target == "all":
         for name, repo_id in MODELS.items():
             if name == "umt5":
@@ -55,6 +71,8 @@ def main():
                 download_model(repo_id, "./models/LongCat-AudioDiT-3.5B-bf16")
             elif name == "asr-0.6b":
                 download_model(repo_id, "./models/Qwen3-ASR-0.6B")
+            elif name == "asr-0.6b-onnx":
+                download_model(repo_id, "./models/Qwen3-ASR-0.6B-ONNX", allow_patterns=ASR_ONNX_INT4_PATTERNS)
     else:
         # Custom repo_id and local_dir
         local_dir = sys.argv[2] if len(sys.argv) > 2 else "./models/custom"

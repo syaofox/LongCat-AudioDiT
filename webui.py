@@ -13,7 +13,6 @@ import torch
 import torch.nn.functional as F
 import soundfile as sf
 import gradio as gr
-import httpx
 
 import audiodit  # auto-registers AudioDiTConfig/AutoDiTModel
 from audiodit import AudioDiTModel
@@ -27,8 +26,37 @@ torch.backends.cudnn.benchmark = False
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
-# ASR server configuration
-ASR_SERVER_URL = os.getenv("ASR_SERVER_URL", "http://localhost:8000")
+# ASR configuration
+ASR_MODEL_PATH = os.getenv("ASR_MODEL_PATH", "./models/Qwen3-ASR-0.6B-ONNX")
+ASR_QUANT = os.getenv("ASR_QUANT", "int4")
+
+_asr_model = None
+
+
+def _load_asr_model():
+    """Load ASR model locally via ONNX."""
+    global _asr_model
+    if _asr_model is not None:
+        return _asr_model
+
+    if not os.path.isdir(ASR_MODEL_PATH):
+        print(f"ASR model not found at {ASR_MODEL_PATH}, skipping local ASR")
+        return None
+
+    try:
+        from qwen_asr_onnx import Qwen3ASRONNX
+        print(f"Loading Qwen3-ASR-0.6B ONNX from {ASR_MODEL_PATH} (quant={ASR_QUANT})...")
+        _asr_model = Qwen3ASRONNX(
+            ASR_MODEL_PATH,
+            quant=ASR_QUANT if ASR_QUANT != "none" else None,
+            max_new_tokens=1024,
+        )
+        _asr_model.load()
+        print("Local ASR model loaded successfully")
+        return _asr_model
+    except Exception as e:
+        print(f"Failed to load local ASR model: {e}")
+        return None
 
 
 def _sanitize_filename(text: str, max_len: int = 15) -> str:
@@ -38,43 +66,24 @@ def _sanitize_filename(text: str, max_len: int = 15) -> str:
     return text[:max_len]
 
 
-def _check_asr_health() -> bool:
-    """Check if ASR server is reachable."""
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            resp = client.get(f"{ASR_SERVER_URL}/health")
-            return resp.status_code == 200
-    except Exception:
-        return False
-
-
 def _transcribe_audio(audio_path: str) -> tuple[str, str]:
-    """Transcribe audio file via ASR server. Returns (text, status)."""
+    """Transcribe audio file via local ONNX ASR model. Returns (text, status)."""
     if not audio_path or not os.path.isfile(audio_path):
         return "", "未上传音频文件"
 
-    if not _check_asr_health():
-        return "", "ASR 服务未启动或不可达"
-
-    try:
-        with httpx.Client(timeout=120.0) as client:
-            with open(audio_path, "rb") as f:
-                files = {"audio": (os.path.basename(audio_path), f, "audio/wav")}
-                resp = client.post(f"{ASR_SERVER_URL}/transcribe", files=files)
-            resp.raise_for_status()
-            data = resp.json()
-            text = data.get("text", "").strip()
-            language = data.get("language", "")
-            if text:
-                status = f"识别成功 (语言: {language})" if language else "识别成功"
-                return text, status
-            return "", "识别结果为空"
-    except httpx.HTTPStatusError as e:
-        return "", f"识别失败: {e.response.status_code} {e.response.text}"
-    except httpx.RequestError as e:
-        return "", f"请求 ASR 服务失败: {e}"
-    except Exception as e:
-        return "", f"识别异常: {e}"
+    model = _load_asr_model()
+    if model is not None:
+        try:
+            results = model.transcribe(audio=audio_path)
+            if not results:
+                return "", "识别结果为空"
+            text = results[0].text
+            detected_lang = getattr(results[0], "language", "unknown")
+            status = f"识别成功 (语言: {detected_lang})" if detected_lang else "识别成功"
+            return text, status
+        except Exception as e:
+            return "", f"本地 ASR 识别失败: {e}"
+    return "", "ASR 模型未加载，请检查模型路径"
 
 
 def _save_mp3(wav: np.ndarray, sr: int, prefix: str, text: str) -> str:

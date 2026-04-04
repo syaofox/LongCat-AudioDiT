@@ -1,18 +1,31 @@
-FROM pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
+FROM pytorch/pytorch:2.10.0-cuda12.8-cudnn9-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Build arguments for user mapping
+# Build arguments (passed via docker-compose .env)
 ARG UID=1000
 ARG GID=1000
+ARG APT_MIRROR=
+ARG PIP_MIRROR=
+ARG GH_PROXY=
 
-# Install system dependencies (ffmpeg, libsndfile for audio)
-RUN apt-get update && apt-get install -y \
-    git \
-    ffmpeg \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
+# Configure apt mirror
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|http://archive.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true; \
+        sed -i "s|http://security.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true; \
+    fi && \
+    apt-get update && apt-get install -y \
+        git \
+        ffmpeg \
+        libsndfile1 \
+        && rm -rf /var/lib/apt/lists/*
+
+# Configure pip mirror
+RUN if [ -n "$PIP_MIRROR" ]; then \
+        pip3 config set global.index-url "$PIP_MIRROR" && \
+        pip3 config set global.trusted-host "$(echo $PIP_MIRROR | sed 's|https\?://||' | cut -d/ -f1)"; \
+    fi
 
 # Create non-root user with specified UID/GID
 RUN if ! getent group ${GID} > /dev/null 2>&1; then \
