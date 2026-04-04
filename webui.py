@@ -1,9 +1,11 @@
 """LongCat-AudioDiT Gradio WebUI for TTS and Voice Cloning."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 from datetime import datetime
 import numpy as np
@@ -19,6 +21,45 @@ from utils import normalize_text, normalize_mixed_text, load_audio, approx_durat
 from utils import load_polyphone_rules, save_polyphone_rules, apply_polyphone_rules, _DEFAULT_POLYPHONE_RULES
 
 torch.backends.cudnn.benchmark = False
+
+# Output directory
+OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
+
+
+def _sanitize_filename(text: str, max_len: int = 15) -> str:
+    """Sanitize and truncate text for use in filenames."""
+    text = re.sub(r'[^\w\u4e00-\u9fff\-\s]', '', text)
+    text = re.sub(r'\s+', '_', text)
+    return text[:max_len]
+
+
+def _save_mp3(wav: np.ndarray, sr: int, prefix: str, text: str) -> str:
+    """Save waveform as 320kbps MP3 in outputs/ directory."""
+    os.makedirs(OUTPUTS_DIR, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_text = _sanitize_filename(text)
+    filename = f"{prefix}_{timestamp}_{safe_text}.mp3"
+    filepath = os.path.join(OUTPUTS_DIR, filename)
+
+    # Use system temp directory to avoid any filesystem permission issues
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        wav_path = tmp.name
+
+    try:
+        sf.write(wav_path, wav, sr)
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", wav_path, "-b:a", "320k", filepath],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+    finally:
+        if os.path.exists(wav_path):
+            os.remove(wav_path)
+
+    return filepath
 
 # Verify GPU availability at startup
 if torch.cuda.is_available():
@@ -216,9 +257,13 @@ def generate_tts(
     # Concatenate all segments
     final_wav = np.concatenate(wav_segments)
     total_duration = len(final_wav) / sr
+
+    # Save to MP3
+    mp3_path = _save_mp3(final_wav, sr, "tts", text.strip())
+
     info = (
         f"生成: {total_duration:.2f}秒 | 分段数: {segment_count} | "
-        f"模型: {model_choice} | 步数: {nfe_steps}"
+        f"模型: {model_choice} | 步数: {nfe_steps} | 保存: {mp3_path}"
     )
 
     return (sr, final_wav), info
@@ -358,9 +403,13 @@ def generate_clone(
     # Concatenate all segments
     final_wav = np.concatenate(wav_segments)
     total_duration = len(final_wav) / sr
+
+    # Save to MP3
+    mp3_path = _save_mp3(final_wav, sr, "clone", target_text.strip())
+
     info = (
         f"生成: {total_duration:.2f}秒 | 分段数: {segment_count} | "
-        f"模型: {model_choice} | 步数: {nfe_steps}"
+        f"模型: {model_choice} | 步数: {nfe_steps} | 保存: {mp3_path}"
     )
 
     return (sr, final_wav), info
