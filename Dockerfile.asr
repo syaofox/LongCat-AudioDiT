@@ -1,0 +1,45 @@
+FROM pytorch/pytorch:2.10.0-cuda13.0-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+ARG UID=1000
+ARG GID=1000
+
+RUN apt-get update && apt-get install -y \
+    git \
+    ffmpeg \
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN if ! getent group ${GID} > /dev/null 2>&1; then \
+        groupadd -g ${GID} appuser; \
+    else \
+        existing_group=$(getent group ${GID} | cut -d: -f1); \
+        groupmod -n appuser ${existing_group}; \
+    fi && \
+    if ! getent passwd ${UID} > /dev/null 2>&1; then \
+        useradd -u ${UID} -g appuser -m appuser; \
+    else \
+        existing_user=$(getent passwd ${UID} | cut -d: -f1); \
+        usermod -l appuser -d /home/appuser -m ${existing_user}; \
+    fi
+
+WORKDIR /app
+
+RUN pip3 install --no-cache-dir --break-system-packages \
+    qwen-asr \
+    fastapi \
+    uvicorn \
+    python-multipart
+
+COPY asr_server.py download_model.py .
+
+RUN mkdir -p /app/models && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8000
+
+CMD ["python3", "asr_server.py"]

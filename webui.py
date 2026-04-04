@@ -13,8 +13,9 @@ import torch
 import torch.nn.functional as F
 import soundfile as sf
 import gradio as gr
+import httpx
 
-import audiodit  # auto-registers AudioDiTConfig/AudioDiTModel
+import audiodit  # auto-registers AudioDiTConfig/AutoDiTModel
 from audiodit import AudioDiTModel
 from transformers import AutoTokenizer
 from utils import normalize_text, normalize_mixed_text, load_audio, approx_duration_from_text, split_text_semantic
@@ -26,12 +27,54 @@ torch.backends.cudnn.benchmark = False
 OUTPUTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "outputs")
 os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
+# ASR server configuration
+ASR_SERVER_URL = os.getenv("ASR_SERVER_URL", "http://localhost:8000")
+
 
 def _sanitize_filename(text: str, max_len: int = 15) -> str:
     """Sanitize and truncate text for use in filenames."""
     text = re.sub(r'[^\w\u4e00-\u9fff\-\s]', '', text)
     text = re.sub(r'\s+', '_', text)
     return text[:max_len]
+
+
+def _check_asr_health() -> bool:
+    """Check if ASR server is reachable."""
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.get(f"{ASR_SERVER_URL}/health")
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _transcribe_audio(audio_path: str) -> tuple[str, str]:
+    """Transcribe audio file via ASR server. Returns (text, status)."""
+    if not audio_path or not os.path.isfile(audio_path):
+        return "", "未上传音频文件"
+
+    if not _check_asr_health():
+        return "", "ASR 服务未启动或不可达"
+
+    try:
+        with httpx.Client(timeout=120.0) as client:
+            with open(audio_path, "rb") as f:
+                files = {"audio": (os.path.basename(audio_path), f, "audio/wav")}
+                resp = client.post(f"{ASR_SERVER_URL}/transcribe", files=files)
+            resp.raise_for_status()
+            data = resp.json()
+            text = data.get("text", "").strip()
+            language = data.get("language", "")
+            if text:
+                status = f"识别成功 (语言: {language})" if language else "识别成功"
+                return text, status
+            return "", "识别结果为空"
+    except httpx.HTTPStatusError as e:
+        return "", f"识别失败: {e.response.status_code} {e.response.text}"
+    except httpx.RequestError as e:
+        return "", f"请求 ASR 服务失败: {e}"
+    except Exception as e:
+        return "", f"识别异常: {e}"
 
 
 def _save_mp3(wav: np.ndarray, sr: int, prefix: str, text: str) -> str:
@@ -662,8 +705,12 @@ def build_ui() -> gr.Blocks:
                         )
                         clone_prompt_text = gr.Textbox(
                             label="参考音频文本",
-                            placeholder="参考音频的文字内容...",
+                            placeholder="参考音频的文字内容 (上传音频后自动识别)...",
                             lines=2,
+                        )
+                        asr_info = gr.Textbox(
+                            label="识别状态",
+                            interactive=False,
                         )
                         with gr.Accordion("高级设置", open=False):
                             clone_nfe = gr.Slider(
@@ -731,6 +778,20 @@ def build_ui() -> gr.Blocks:
                     load_reference_package,
                     inputs=[package_dropdown],
                     outputs=[clone_audio, clone_prompt_text],
+                )
+
+                def on_audio_change(audio_path: str | None, existing_text: str) -> tuple[str, str]:
+                    if audio_path is None:
+                        return "", ""
+                    if existing_text and existing_text.strip():
+                        return existing_text, "已存在参考文本，跳过识别"
+                    text, status = _transcribe_audio(audio_path)
+                    return text, status
+
+                clone_audio.change(
+                    on_audio_change,
+                    inputs=[clone_audio, clone_prompt_text],
+                    outputs=[clone_prompt_text, asr_info],
                 )
 
             with gr.Tab("多音字规则"):

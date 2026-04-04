@@ -10,6 +10,7 @@ MODELS = {
     "1b": "meituan-longcat/LongCat-AudioDiT-1B",
     "3.5b-bf16": "drbaph/LongCat-AudioDiT-3.5B-bf16",
     "umt5": "google/umt5-base",
+    "asr-0.6b": "Qwen/Qwen3-ASR-0.6B",
 }
 
 
@@ -42,6 +43,8 @@ def main():
         download_model(MODELS[target], "./models/LongCat-AudioDiT-3.5B-bf16")
     elif target == "umt5":
         download_model(MODELS[target], "./models/umt5-base")
+    elif target == "asr-0.6b":
+        download_model(MODELS[target], "./models/Qwen3-ASR-0.6B")
     elif target == "all":
         for name, repo_id in MODELS.items():
             if name == "umt5":
@@ -50,6 +53,8 @@ def main():
                 download_model(repo_id, "./models/LongCat-AudioDiT-1B")
             elif name == "3.5b-bf16":
                 download_model(repo_id, "./models/LongCat-AudioDiT-3.5B-bf16")
+            elif name == "asr-0.6b":
+                download_model(repo_id, "./models/Qwen3-ASR-0.6B")
     else:
         # Custom repo_id and local_dir
         local_dir = sys.argv[2] if len(sys.argv) > 2 else "./models/custom"

@@ -171,6 +171,59 @@ output = model(
 )
 ```
 
+## Docker Compose (WebUI + ASR)
+
+This project provides a Docker Compose setup that runs two services:
+
+- **WebUI** (`:7860`): Gradio interface for TTS and voice cloning
+- **ASR** (`:8000`): Qwen3-ASR-0.6B speech recognition service, used to automatically transcribe reference audio in the voice cloning tab
+
+### Prerequisites
+
+- NVIDIA GPU with CUDA support
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed
+
+### Quick Start
+
+```bash
+# Build and start all services
+docker compose up -d --build
+
+# View logs
+docker compose logs -f webui
+docker compose logs -f asr
+```
+
+### Model Preparation
+
+Models should be placed in the `./models` directory. The ASR model will be downloaded automatically on first startup if not present. You can also download it manually:
+
+```bash
+# Download ASR model
+python download_model.py asr-0.6b
+
+# Download all models
+python download_model.py all
+```
+
+### Voice Cloning with Auto ASR
+
+When you upload a reference audio in the "声音克隆" tab, the system will automatically send it to the ASR service for transcription and fill the recognized text into the reference text field. If the text field already has content, it will skip recognition to preserve your existing text.
+
+### Service URLs
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| WebUI | http://localhost:7860 | Gradio web interface |
+| ASR API | http://localhost:8000/docs | FastAPI auto transcription service |
+| ASR Health | http://localhost:8000/health | Health check endpoint |
+
+### Stopping Services
+
+```bash
+docker compose down
+```
+
 ## License Agreement
 This repository, including both the model weights and the source code, is released under the **MIT License**.
 
