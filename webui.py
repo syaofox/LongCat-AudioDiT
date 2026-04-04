@@ -722,25 +722,25 @@ def build_ui() -> gr.Blocks:
 
     with gr.Blocks(
         title="LongCat-AudioDiT 语音合成",
-        theme=gr.themes.Soft(),
     ) as demo:
         gr.Markdown("# LongCat-AudioDiT 语音合成 & 声音克隆")
 
         with gr.Row():
-            model_dropdown = gr.Dropdown(
-                choices=available_models,
-                value=available_models[0],
-                label="模型",
-                scale=3,
-            )
-            model_status = gr.Textbox(
-                value="未加载模型",
-                label="状态",
-                interactive=False,
-                scale=4,
-            )
-            load_btn = gr.Button("加载模型", scale=1, variant="primary")
-            unload_btn = gr.Button("卸载模型", scale=1, variant="stop")
+            with gr.Column(scale=7):
+                with gr.Row():
+                    model_dropdown = gr.Dropdown(
+                        choices=available_models,
+                        value=available_models[0],
+                        label="模型",
+                    )
+                    model_status = gr.Textbox(
+                        value="未加载模型",
+                        label="状态",
+                        interactive=False,
+                    )
+            with gr.Column(scale=1):
+                load_btn = gr.Button("加载模型", variant="primary")
+                unload_btn = gr.Button("卸载模型", variant="stop")
 
         def on_load_model(model_key: str) -> str:
             try:
@@ -1125,4 +1125,5 @@ if __name__ == "__main__":
     demo.launch(
         server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
         server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        theme=gr.themes.Soft(),
     )
