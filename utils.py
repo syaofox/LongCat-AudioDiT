@@ -3,6 +3,8 @@ import json
 import os
 import librosa
 import torch
+import numpy as np
+import pyloudnorm as pyln
 import cn2an
 from semantic_text_splitter import TextSplitter
 
@@ -14,8 +16,40 @@ _DEFAULT_POLYPHONE_RULES = {
     "银行[行]长": "航",
 }
 
+def normalize_loudness(audio: np.ndarray, sr: int, target_lufs: float = -18.0) -> np.ndarray:
+    """Normalize audio loudness to target LUFS using EBU R128 (K-weighting).
+
+    Args:
+        audio: Mono audio array (float32).
+        sr: Sample rate.
+        target_lufs: Target loudness in LUFS. Default -18.0 for TTS reference audio.
+
+    Returns:
+        Loudness-normalized audio array.
+    """
+    if audio.size == 0:
+        return audio
+
+    meter = pyln.Meter(sr)
+    loudness = meter.integrated_loudness(audio)
+
+    if np.isinf(loudness) or np.isnan(loudness):
+        return audio
+
+    gain_db = target_lufs - loudness
+    gain_linear = 10.0 ** (gain_db / 20.0)
+    normalized = audio * gain_linear
+
+    peak = np.max(np.abs(normalized))
+    if peak > 0.99:
+        normalized = normalized * (0.99 / peak)
+
+    return normalized.astype(np.float32)
+
+
 def load_audio(wavpath, sr):
     audio, _ = librosa.load(wavpath, sr=sr, mono=True)
+    audio = normalize_loudness(audio, sr)
     return torch.from_numpy(audio).unsqueeze(0)
 
 def normalize_text(text):

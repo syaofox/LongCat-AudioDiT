@@ -9,3 +9,4 @@ huggingface_hub>=0.20.0
 semantic-text-splitter>=0.29.0
 cn2an>=0.5.23
 onnxruntime>=1.17
+pyloudnorm>=0.1.1
