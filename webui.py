@@ -236,12 +236,11 @@ def generate_tts(
     if not text or not text.strip():
         raise gr.Error("请输入要合成的文本。")
 
-    try:
-        model, tokenizer = model_manager.load(model_choice)
-    except gr.Error:
-        raise
-    except Exception as e:
-        raise gr.Error(f"加载模型失败: {e}")
+    if model_manager.model is None:
+        raise gr.Error("请先点击顶部「加载模型」按钮。")
+
+    model = model_manager.model
+    tokenizer = model_manager.tokenizer
 
     device = model_manager.device
     torch.manual_seed(seed)
@@ -358,12 +357,11 @@ def generate_clone(
     if not target_text or not target_text.strip():
         raise gr.Error("请输入要合成的文本。")
 
-    try:
-        model, tokenizer = model_manager.load(model_choice)
-    except gr.Error:
-        raise
-    except Exception as e:
-        raise gr.Error(f"加载模型失败: {e}")
+    if model_manager.model is None:
+        raise gr.Error("请先点击顶部「加载模型」按钮。")
+
+    model = model_manager.model
+    tokenizer = model_manager.tokenizer
 
     device = model_manager.device
     torch.manual_seed(seed)
@@ -725,6 +723,10 @@ def build_ui() -> gr.Blocks:
                     fn=lambda: gr.Button(value="生成中...", interactive=False),
                     outputs=[tts_btn],
                 ).then(
+                    fn=on_load_model,
+                    inputs=[model_dropdown],
+                    outputs=[model_status],
+                ).then(
                     fn=generate_tts,
                     inputs=[tts_text, model_dropdown, tts_nfe, tts_guidance, tts_strength, tts_seed, tts_silence, tts_max_chars],
                     outputs=[tts_output, tts_info],
@@ -808,6 +810,10 @@ def build_ui() -> gr.Blocks:
                 clone_btn.click(
                     fn=lambda: gr.Button(value="克隆中...", interactive=False),
                     outputs=[clone_btn],
+                ).then(
+                    fn=on_load_model,
+                    inputs=[model_dropdown],
+                    outputs=[model_status],
                 ).then(
                     fn=generate_clone,
                     inputs=[
