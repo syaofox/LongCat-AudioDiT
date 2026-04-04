@@ -25,6 +25,9 @@ services:
       - ./assets:/app/assets
       - ./samples:/app/samples
       - ./polyphone_rules.json:/app/polyphone_rules.json
+      # 开发时使用当前目录的代码，生产环境建议注释掉以使用镜像内的代码
+      - ./webui.py:/app/webui.py
+      - ./qwen_asr_onnx.py:/app/qwen_asr_onnx.py
     ports:
       - "7860:7860"
     healthcheck:

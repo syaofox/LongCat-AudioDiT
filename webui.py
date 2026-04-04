@@ -560,7 +560,7 @@ def list_reference_packages() -> list[str]:
 def load_reference_package(package_name: str) -> tuple[str | None, str]:
     """从已保存的包中加载参考音频和文本。"""
     if not package_name:
-        raise gr.Error("请选择一个参考包。")
+        return None, ""
     
     samples_dir = "/app/samples"
     zip_path = os.path.join(samples_dir, f"{package_name}.zip")
