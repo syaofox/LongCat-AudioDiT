@@ -628,7 +628,17 @@ def build_ui() -> gr.Blocks:
             except Exception as e:
                 return f"错误: {e}"
 
-        load_btn.click(on_load_model, inputs=[model_dropdown], outputs=[model_status])
+        load_btn.click(
+            fn=lambda: gr.Button(value="加载中...", interactive=False),
+            outputs=[load_btn],
+        ).then(
+            fn=on_load_model,
+            inputs=[model_dropdown],
+            outputs=[model_status],
+        ).then(
+            fn=lambda: gr.Button(value="加载模型", interactive=True),
+            outputs=[load_btn],
+        )
 
         with gr.Tabs():
             with gr.Tab("语音合成"):
