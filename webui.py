@@ -163,9 +163,26 @@ class ModelManager:
 
         return tokenizer_path
 
+    def unload(self) -> None:
+        """Unload the current model to free VRAM."""
+        if self.model is not None:
+            print(f"正在卸载模型 {self.current_model_key}...")
+            del self.model
+            del self.tokenizer
+            self.model = None
+            self.tokenizer = None
+            self.current_model_key = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print("模型已卸载。")
+
     def load(self, model_key: str) -> tuple[AudioDiTModel, AutoTokenizer]:
         if model_key == self.current_model_key and self.model is not None:
             return self.model, self.tokenizer
+
+        # Unload current model if switching
+        if self.model is not None:
+            self.unload()
 
         model_dir = self._ensure_model(model_key)
         tokenizer_path = self._ensure_tokenizer(model_dir)
@@ -620,6 +637,7 @@ def build_ui() -> gr.Blocks:
                 scale=4,
             )
             load_btn = gr.Button("加载模型", scale=1, variant="primary")
+            unload_btn = gr.Button("卸载模型", scale=1, variant="stop")
 
         def on_load_model(model_key: str) -> str:
             try:
@@ -628,16 +646,32 @@ def build_ui() -> gr.Blocks:
             except Exception as e:
                 return f"错误: {e}"
 
+        def on_unload_model() -> str:
+            model_manager.unload()
+            return model_manager.get_status()
+
         load_btn.click(
-            fn=lambda: gr.Button(value="加载中...", interactive=False),
-            outputs=[load_btn],
+            fn=lambda: (gr.Button(value="加载中...", interactive=False), gr.Button(interactive=False)),
+            outputs=[load_btn, unload_btn],
         ).then(
             fn=on_load_model,
             inputs=[model_dropdown],
             outputs=[model_status],
         ).then(
-            fn=lambda: gr.Button(value="加载模型", interactive=True),
-            outputs=[load_btn],
+            fn=lambda: (gr.Button(value="加载模型", interactive=True), gr.Button(interactive=True)),
+            outputs=[load_btn, unload_btn],
+        )
+
+        unload_btn.click(
+            fn=lambda: (gr.Button(interactive=False), gr.Button(value="卸载中...", interactive=False)),
+            outputs=[load_btn, unload_btn],
+        ).then(
+            fn=on_unload_model,
+            inputs=[],
+            outputs=[model_status],
+        ).then(
+            fn=lambda: (gr.Button(interactive=True), gr.Button(value="卸载模型", interactive=True)),
+            outputs=[load_btn, unload_btn],
         )
 
         with gr.Tabs():
