@@ -19,7 +19,9 @@ dist/
 build/
 models/
 outputs/
+samples/
 .git/
 .gitignore
 *.md
 *.pdf
+.DS_Store

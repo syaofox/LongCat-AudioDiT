@@ -1,0 +1,69 @@
+FROM pytorch/pytorch:2.10.0-cuda12.8-cudnn9-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    AUTO_LOAD_MODEL=true \
+    DEFAULT_MODEL=1B \
+    PORT=7860 \
+    HOST=0.0.0.0 \
+    WORKERS=1 \
+    SAMPLES_DIR=/app/samples \
+    OUTPUTS_DIR=/app/outputs
+
+# Build arguments (passed via docker-compose .env)
+ARG UID=1000
+ARG GID=1000
+ARG APT_MIRROR=
+ARG PIP_MIRROR=
+
+# Configure apt mirror
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|http://archive.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true; \
+        sed -i "s|http://security.ubuntu.com|$APT_MIRROR|g" /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null || true; \
+    fi && \
+    apt-get update && apt-get install -y \
+        ffmpeg \
+        libsndfile1 \
+        && rm -rf /var/lib/apt/lists/*
+
+# Configure pip mirror
+RUN if [ -n "$PIP_MIRROR" ]; then \
+        pip3 config set global.index-url "$PIP_MIRROR" && \
+        pip3 config set global.trusted-host "$(echo $PIP_MIRROR | sed 's|https\?://||' | cut -d/ -f1)"; \
+    fi
+
+# Create non-root user with specified UID/GID
+RUN if ! getent group ${GID} > /dev/null 2>&1; then \
+        groupadd -g ${GID} appuser; \
+    else \
+        existing_group=$(getent group ${GID} | cut -d: -f1); \
+        groupmod -n appuser ${existing_group}; \
+    fi && \
+    if ! getent passwd ${UID} > /dev/null 2>&1; then \
+        useradd -u ${UID} -g appuser -m appuser; \
+    else \
+        existing_user=$(getent passwd ${UID} | cut -d: -f1); \
+        usermod -l appuser -d /home/appuser -m ${existing_user}; \
+    fi
+
+WORKDIR /app
+
+# Copy and install API-specific dependencies
+COPY requirements-api.txt .
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements-api.txt
+
+# Copy application code
+COPY . .
+
+# Create directories and set ownership
+RUN mkdir -p /models /app/outputs /app/samples && \
+    chown -R appuser:appuser /app /models
+
+# Switch to non-root user
+USER appuser
+
+# Expose API port
+EXPOSE 7860
+
+CMD ["python3", "api_server.py"]
