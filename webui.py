@@ -669,9 +669,15 @@ def build_ui() -> gr.Blocks:
                         tts_info = gr.Textbox(label="信息", interactive=False)
 
                 tts_btn.click(
-                    generate_tts,
+                    fn=lambda: gr.Button(value="生成中...", interactive=False),
+                    outputs=[tts_btn],
+                ).then(
+                    fn=generate_tts,
                     inputs=[tts_text, model_dropdown, tts_nfe, tts_guidance, tts_strength, tts_seed, tts_silence, tts_max_chars],
                     outputs=[tts_output, tts_info],
+                ).then(
+                    fn=lambda: gr.Button(value="生成", interactive=True),
+                    outputs=[tts_btn],
                 )
 
             with gr.Tab("声音克隆"):
@@ -747,13 +753,19 @@ def build_ui() -> gr.Blocks:
                         clone_info = gr.Textbox(label="信息", interactive=False)
 
                 clone_btn.click(
-                    generate_clone,
+                    fn=lambda: gr.Button(value="克隆中...", interactive=False),
+                    outputs=[clone_btn],
+                ).then(
+                    fn=generate_clone,
                     inputs=[
                         clone_audio, clone_prompt_text, clone_target_text,
                         model_dropdown, clone_nfe, clone_guidance, clone_strength, clone_seed,
                         clone_silence, clone_max_chars, clone_country,
                     ],
                     outputs=[clone_output, clone_info],
+                ).then(
+                    fn=lambda: gr.Button(value="克隆声音", interactive=True),
+                    outputs=[clone_btn],
                 )
 
                 save_btn.click(
