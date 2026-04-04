@@ -506,6 +506,11 @@ def save_reference_package(
     if not package_name:
         package_name = f"reference_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+    # Check if package already exists
+    zip_path = os.path.join(samples_dir, f"{package_name}.zip")
+    if os.path.isfile(zip_path):
+        return f"DUPLICATE:{package_name}"
+
     # Create temporary directory for packaging
     temp_dir = os.path.join(samples_dir, f"_temp_{package_name}")
     os.makedirs(temp_dir, exist_ok=True)
@@ -522,8 +527,6 @@ def save_reference_package(
             f.write(prompt_text.strip())
 
         # Create zip file
-        zip_path = os.path.join(samples_dir, f"{package_name}.zip")
-        file_exists = os.path.isfile(zip_path)
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, dirs, files in os.walk(temp_dir):
                 for file in files:
@@ -531,15 +534,108 @@ def save_reference_package(
                     arcname = os.path.relpath(file_path, temp_dir)
                     zipf.write(file_path, arcname)
 
-        # Clean up temp directory
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-        action = "更新" if file_exists else "保存"
-        return f"{action}成功: {zip_path}"
+        return f"保存成功: {zip_path}"
 
     except Exception as e:
-        # Clean up temp directory on error
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        if os.path.isdir(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise gr.Error(f"保存参考包失败: {e}")
+
+
+def save_reference_package_replace(
+    prompt_audio: str | None,
+    prompt_text: str,
+    package_name: str,
+) -> str:
+    """保存参考包，如果已存在则替换。"""
+    if prompt_audio is None:
+        raise gr.Error("请上传参考音频文件。")
+    if not prompt_text or not prompt_text.strip():
+        raise gr.Error("请输入参考音频的文本内容。")
+
+    samples_dir = "/app/samples"
+    os.makedirs(samples_dir, exist_ok=True)
+
+    package_name = "".join(c for c in package_name if c.isalnum() or c in "_-")
+    if not package_name:
+        package_name = f"reference_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    zip_path = os.path.join(samples_dir, f"{package_name}.zip")
+    temp_dir = os.path.join(samples_dir, f"_temp_{package_name}")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    try:
+        audio_ext = os.path.splitext(prompt_audio)[1] or ".wav"
+        audio_dest = os.path.join(temp_dir, f"reference_audio{audio_ext}")
+        shutil.copy2(prompt_audio, audio_dest)
+
+        text_dest = os.path.join(temp_dir, "reference_text.txt")
+        with open(text_dest, "w", encoding="utf-8") as f:
+            f.write(prompt_text.strip())
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+
+        return f"替换成功: {zip_path}"
+
+    except Exception as e:
+        if os.path.isdir(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        raise gr.Error(f"保存参考包失败: {e}")
+
+
+def save_reference_package_rename(
+    prompt_audio: str | None,
+    prompt_text: str,
+    package_name: str,
+) -> str:
+    """保存参考包，如果已存在则自动添加时间戳重命名。"""
+    if prompt_audio is None:
+        raise gr.Error("请上传参考音频文件。")
+    if not prompt_text or not prompt_text.strip():
+        raise gr.Error("请输入参考音频的文本内容。")
+
+    samples_dir = "/app/samples"
+    os.makedirs(samples_dir, exist_ok=True)
+
+    package_name = "".join(c for c in package_name if c.isalnum() or c in "_-")
+    if not package_name:
+        package_name = f"reference_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    zip_path = os.path.join(samples_dir, f"{package_name}.zip")
+    if os.path.isfile(zip_path):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        package_name = f"{package_name}_{timestamp}"
+        zip_path = os.path.join(samples_dir, f"{package_name}.zip")
+
+    temp_dir = os.path.join(samples_dir, f"_temp_{package_name}")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    try:
+        audio_ext = os.path.splitext(prompt_audio)[1] or ".wav"
+        audio_dest = os.path.join(temp_dir, f"reference_audio{audio_ext}")
+        shutil.copy2(prompt_audio, audio_dest)
+
+        text_dest = os.path.join(temp_dir, "reference_text.txt")
+        with open(text_dest, "w", encoding="utf-8") as f:
+            f.write(prompt_text.strip())
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+
+        return f"保存成功 (已重命名): {zip_path}"
+
+    except Exception as e:
+        if os.path.isdir(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
         raise gr.Error(f"保存参考包失败: {e}")
 
 
@@ -759,6 +855,10 @@ def build_ui() -> gr.Blocks:
                             )
                             save_btn = gr.Button("保存参考包", variant="secondary")
                             save_info = gr.Textbox(label="保存状态", interactive=False)
+                            with gr.Row(visible=False) as save_conflict_row:
+                                replace_btn = gr.Button("替换已有", variant="stop", scale=1)
+                                rename_btn = gr.Button("改名保存", variant="primary", scale=1)
+                                cancel_btn = gr.Button("取消", variant="secondary", scale=1)
                     with gr.Column(scale=1):
                         clone_audio = gr.Audio(
                             label="参考音频",
@@ -831,6 +931,42 @@ def build_ui() -> gr.Blocks:
                     save_reference_package,
                     inputs=[clone_audio, clone_prompt_text, package_name],
                     outputs=[save_info],
+                ).then(
+                    fn=lambda result: gr.Row(visible=result.startswith("DUPLICATE:") if result else False),
+                    inputs=[save_info],
+                    outputs=[save_conflict_row],
+                )
+
+                def _do_replace(audio, text, name):
+                    return save_reference_package_replace(audio, text, name)
+
+                def _do_rename(audio, text, name):
+                    return save_reference_package_rename(audio, text, name)
+
+                replace_btn.click(
+                    _do_replace,
+                    inputs=[clone_audio, clone_prompt_text, package_name],
+                    outputs=[save_info],
+                ).then(
+                    fn=lambda: gr.Row(visible=False),
+                    outputs=[save_conflict_row],
+                )
+
+                rename_btn.click(
+                    _do_rename,
+                    inputs=[clone_audio, clone_prompt_text, package_name],
+                    outputs=[save_info],
+                ).then(
+                    fn=lambda: (gr.Row(visible=False), gr.Dropdown()),
+                    outputs=[save_conflict_row, package_dropdown],
+                ).then(
+                    fn=refresh_package_list,
+                    outputs=[package_dropdown],
+                )
+
+                cancel_btn.click(
+                    fn=lambda: (gr.Row(visible=False), ""),
+                    outputs=[save_conflict_row, save_info],
                 )
 
                 refresh_btn.click(
