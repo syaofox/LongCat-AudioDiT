@@ -180,6 +180,10 @@ def split_text_semantic(text: str, max_chars: int = 100) -> list[str]:
 
     # If text is short enough and already has proper punctuation, no need to split
     if len(text) <= max_chars:
+        # Skip pure punctuation-only text
+        if not any("\u4e00" <= c <= "\u9fff" or c.isalpha() or c.isdigit() for c in text):
+            print(f"  [语义分割] 纯标点文本, 跳过: \"{text}\"")
+            return []
         chunk = ensure_punctuation(text)
         print(f"  [语义分割] 文本较短({len(text)}字), 不分割: \"{chunk}\"")
         return [chunk]
@@ -192,13 +196,22 @@ def split_text_semantic(text: str, max_chars: int = 100) -> list[str]:
     result = []
     for i, chunk in enumerate(raw_chunks):
         chunk = chunk.strip()
-        if chunk:
-            fixed = ensure_punctuation(chunk)
-            punct_added = fixed != chunk.rstrip()
-            print(f"  [语义分割] 段落 {i+1}/{len(raw_chunks)} ({len(chunk)}字) [补标点: {'是' if punct_added else '否'}]: \"{fixed}\"")
-            result.append(fixed)
+        if not chunk:
+            continue
+        # Skip chunks that contain only punctuation (no actual speech content)
+        if not any("\u4e00" <= c <= "\u9fff" or c.isalpha() or c.isdigit() for c in chunk):
+            print(f"  [语义分割] 段落 {i+1}/{len(raw_chunks)}: 纯标点, 跳过: \"{chunk}\"")
+            continue
+        fixed = ensure_punctuation(chunk)
+        punct_added = fixed != chunk.rstrip()
+        print(f"  [语义分割] 段落 {i+1}/{len(raw_chunks)} ({len(chunk)}字) [补标点: {'是' if punct_added else '否'}]: \"{fixed}\"")
+        result.append(fixed)
 
     if not result:
+        # If all chunks were pure punctuation, fall back to the original text
+        if not any("\u4e00" <= c <= "\u9fff" or c.isalpha() or c.isdigit() for c in text):
+            print(f"  [语义分割] 分割结果全为纯标点, 跳过: \"{text}\"")
+            return []
         fixed = ensure_punctuation(text)
         print(f"  [语义分割] 分割结果为空, 使用原文: \"{fixed}\"")
         result = [fixed]
